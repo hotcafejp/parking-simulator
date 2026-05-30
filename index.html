@@ -1,0 +1,3775 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>駐車場区画線シミュレーター | ナイヤガラ開発</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --primary: #1a5276;
+  --primary-light: #2980b9;
+  --accent: #e67e22;
+  --bg: #f4f6f8;
+  --sidebar-w: 320px;
+  --toolbar-h: 52px;
+}
+body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; background: var(--bg); overflow: hidden; height: 100vh; }
+
+.header { display: flex; align-items: center; justify-content: space-between; background: var(--primary); color: #fff; height: var(--toolbar-h); padding: 0 16px; z-index: 100; }
+.header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.5px; }
+.header .logo { display: flex; align-items: center; gap: 10px; }
+.header .logo-mark { width: 30px; height: 30px; background: var(--accent); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 14px; }
+
+.toolbar { display: flex; align-items: center; gap: 6px; background: #fff; border-bottom: 1px solid #ddd; padding: 6px 16px; height: 44px; flex-wrap: nowrap; overflow-x: auto; }
+.tool-btn { display: flex; align-items: center; gap: 5px; padding: 6px 14px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; color: #333; transition: all 0.15s; white-space: nowrap; }
+.tool-btn:hover { background: #eef2f7; border-color: #aaa; }
+.tool-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.tool-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.tool-sep { width: 1px; height: 28px; background: #ddd; margin: 0 4px; flex-shrink: 0; }
+.tool-btn.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tool-btn.accent:hover { background: #d35400; }
+.tool-btn.gate-tool { background: #27ae60; color: #fff; border-color: #27ae60; }
+.tool-btn.gate-tool:hover { background: #219a52; }
+.tool-btn.gate-tool.active { background: #1e8449; border-color: #1e8449; }
+
+.main { display: flex; height: calc(100vh - var(--toolbar-h) - 44px); }
+
+.sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); background: #fff; border-right: 1px solid #ddd; overflow-y: auto; padding: 16px; }
+.section { margin-bottom: 20px; }
+.section-title { font-size: 12px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid var(--primary); }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 600; }
+.form-group select, .form-group input[type="number"] { width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px; background: #fff; }
+.form-row { display: flex; gap: 8px; }
+.form-row .form-group { flex: 1; }
+
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat-card { background: #f8f9fb; border: 1px solid #e8ecf0; border-radius: 8px; padding: 10px; text-align: center; }
+.stat-value { font-size: 22px; font-weight: 800; color: var(--primary); }
+.stat-label { font-size: 10px; color: #888; margin-top: 2px; }
+
+.canvas-area { flex: 1; position: relative; background: #e8ecf0; overflow: hidden; }
+#mainCanvas { display: block; cursor: crosshair; }
+.canvas-info { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); color: #fff; font-size: 11px; padding: 4px 10px; border-radius: 4px; pointer-events: none; }
+.zoom-controls { position: absolute; bottom: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; }
+.zoom-btn { width: 32px; height: 32px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+.zoom-btn:hover { background: #eee; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal-overlay.hidden { display: none; }
+.modal { background: #fff; border-radius: 12px; padding: 28px; max-width: 560px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.modal h2 { font-size: 18px; color: var(--primary); margin-bottom: 12px; }
+.modal p { font-size: 13px; color: #555; line-height: 1.7; margin-bottom: 16px; }
+.modal .btn-row { display: flex; gap: 8px; justify-content: flex-end; }
+.modal .btn { padding: 8px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.modal .btn-primary { background: var(--primary); color: #fff; }
+
+.hint-bar { background: #fff3cd; border-bottom: 1px solid #ffc107; padding: 8px 16px; font-size: 12px; color: #856404; display: flex; align-items: center; gap: 8px; }
+.hint-bar.hidden { display: none; }
+.hint-bar .close-hint { cursor: pointer; margin-left: auto; font-weight: 700; }
+
+.chk-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; cursor: pointer; }
+.chk-label input { margin: 0; }
+
+/* Gate list in sidebar */
+.gate-list { margin-top: 8px; }
+.gate-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: #f0faf4; border: 1px solid #b2dfdb; border-radius: 6px; margin-bottom: 6px; font-size: 12px; }
+.gate-item .gate-label { color: #2e7d32; font-weight: 600; }
+.gate-item .gate-info { color: #666; font-size: 11px; }
+.gate-item .gate-delete { background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 14px; font-weight: 700; padding: 0 4px; }
+.gate-item .gate-delete:hover { color: #c0392b; }
+.gate-empty { font-size: 11px; color: #999; padding: 6px 0; }
+
+/* Obstacle tool button */
+.tool-btn.obstacle-tool { background: #8e44ad; color: #fff; border-color: #8e44ad; }
+.tool-btn.obstacle-tool:hover { background: #7d3c98; }
+.tool-btn.obstacle-tool.active { background: #6c3483; border-color: #6c3483; }
+
+/* Obstacle list in sidebar */
+.obs-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background: #f5eef8; border: 1px solid #d2b4de; border-radius: 6px; margin-bottom: 6px; font-size: 12px; }
+.obs-item .obs-label { color: #6c3483; font-weight: 600; }
+.obs-item .obs-info { color: #666; font-size: 11px; }
+.obs-item .obs-delete { background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 14px; font-weight: 700; padding: 0 4px; }
+.obs-item .obs-delete:hover { color: #c0392b; }
+.obs-empty { font-size: 11px; color: #999; padding: 6px 0; }
+.obs-type-selector { display: flex; gap: 6px; margin-bottom: 8px; }
+.obs-type-btn { flex: 1; padding: 6px 4px; border: 2px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; text-align: center; font-size: 11px; color: #555; transition: all 0.15s; }
+.obs-type-btn:hover { border-color: #8e44ad; }
+.obs-type-btn.active { border-color: #8e44ad; background: #f5eef8; color: #8e44ad; font-weight: 700; }
+
+/* Manual placement section */
+.manual-section { display: none; }
+.manual-section.visible { display: block; }
+.manual-size-selector { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+.manual-size-btn { flex: 1; min-width: 60px; padding: 7px 4px; border: 2px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; text-align: center; font-size: 11px; color: #555; transition: all 0.15s; }
+.manual-size-btn:hover { border-color: #2980b9; }
+.manual-size-btn.active { border-color: #2980b9; background: #eaf2fa; color: #2980b9; font-weight: 700; }
+.manual-custom-inputs { display: none; gap: 6px; margin-top: 6px; }
+.manual-custom-inputs.visible { display: flex; }
+.manual-custom-inputs input { width: 60px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+.manual-placed-list { max-height: 120px; overflow-y: auto; margin-top: 6px; }
+.manual-placed-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; background: #f0f4f8; border: 1px solid #dde3ea; border-radius: 4px; margin-bottom: 3px; font-size: 11px; }
+.manual-placed-item .mp-delete { background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 13px; font-weight: 700; padding: 0 4px; }
+.manual-placed-item .mp-delete:hover { color: #c0392b; }
+
+/* Image / Calibrate tool */
+/* calibrate tool button styling removed - uses default tool-btn style */
+.img-upload-area { border: 2px dashed #bbb; border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; color: #888; font-size: 12px; transition: all 0.2s; margin-bottom: 10px; }
+.img-upload-area:hover { border-color: var(--primary); color: var(--primary); }
+.img-upload-area.has-image { border-color: #27ae60; background: #f0faf4; color: #2e7d32; }
+.calibrate-status { font-size: 11px; color: #666; padding: 6px 8px; background: #f8f9fb; border-radius: 6px; margin-top: 6px; line-height: 1.5; }
+.calibrate-status.active { background: #fff3cd; color: #856404; }
+.calibrate-status.done { background: #d4edda; color: #155724; }
+.slider-row { display: flex; align-items: center; gap: 8px; }
+.slider-row input[type="range"] { flex: 1; }
+.slider-row .slider-val { font-size: 11px; color: #666; min-width: 32px; text-align: right; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-mark">S</div>
+    <h1>駐車場区画線シミュレーター</h1>
+  </div>
+  <div>
+    <button class="tool-btn" onclick="showHelp()" style="color:#333;border-color:#ccc;background:#fff">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      使い方
+    </button>
+  </div>
+</div>
+
+<div class="hint-bar" id="hintBar">
+  まず「敷地を描く」または「矩形」ツールで敷地の輪郭を描いてください。「手動配置」で1台ずつ自由に配置できます。
+  <span class="close-hint" onclick="document.getElementById('hintBar').classList.add('hidden')">✕</span>
+</div>
+
+<div class="toolbar">
+  <button class="tool-btn active" id="toolDraw" onclick="setTool('draw')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+    敷地を描く
+  </button>
+  <button class="tool-btn" id="toolRect" onclick="setTool('rect')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+    矩形
+  </button>
+  <button class="tool-btn gate-tool" id="toolGate" onclick="setTool('gate')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/><line x1="3" y1="12" x2="15" y2="12"/><rect x="18" y="3" width="2" height="18" rx="1"/></svg>
+    出入口
+  </button>
+  <button class="tool-btn obstacle-tool" id="toolObstacle" onclick="setTool('obstacle')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><line x1="4" y1="4" x2="20" y2="20"/><line x1="20" y1="4" x2="4" y2="20"/></svg>
+    障害物
+  </button>
+  <button class="tool-btn" id="toolSelect" onclick="setTool('select')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg>
+    選択
+  </button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" id="toolCalibrate" onclick="setTool('calibrate')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.3 15.3a2.4 2.4 0 010 3.4l-2.6 2.6a2.4 2.4 0 01-3.4 0L2.7 8.7a2.4 2.4 0 010-3.4l2.6-2.6a2.4 2.4 0 013.4 0z"/><line x1="14" y1="4" x2="20" y2="10"/><line x1="9" y1="7" x2="11" y2="9"/><line x1="6" y1="10" x2="8" y2="12"/><line x1="12" y1="16" x2="14" y2="18"/></svg>
+    辺距離
+  </button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" id="toolManual" onclick="setTool('manual')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="6" height="10" rx="1"/><line x1="7" y1="14" x2="7" y2="20"/><line x1="4" y1="18" x2="10" y2="18"/><path d="M15 8l3-3 3 3"/><path d="M18 5v8"/></svg>
+    手動配置
+  </button>
+  <button class="tool-btn" onclick="cycleAutoLayout()" id="autoLayoutBtn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    自動配置
+  </button>
+  <button class="tool-btn" id="toolMeasure" onclick="setTool('measure')" style="background:#16a085;color:#fff;border-color:#16a085;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4m3 0h2m3 0h2m3 0h3"/><line x1="2" y1="8" x2="2" y2="16"/><line x1="22" y1="8" x2="22" y2="16"/></svg>
+    メジャー
+  </button>
+  <button class="tool-btn" onclick="clearAll()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+    クリア
+  </button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn accent" onclick="exportPDF()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    PDF出力
+  </button>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="section">
+      <div class="section-title">背景画像（航空写真・図面）</div>
+      <div class="img-upload-area" id="imgUploadArea" onclick="document.getElementById('bgImageInput').click()">
+        <span id="imgUploadLabel">クリックして航空写真・図面を<br>アップロード（PNG/JPG）</span>
+        <input type="file" id="bgImageInput" accept="image/*" style="display:none" onchange="onBgImageUpload(event)">
+      </div>
+      <div class="form-group">
+        <label>透明度</label>
+        <div class="slider-row">
+          <input type="range" id="bgOpacity" min="10" max="100" value="50" oninput="onBgOpacityChange(this.value)">
+          <span class="slider-val" id="bgOpacityVal">50%</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="chk-label"><input type="checkbox" id="showBgImage" checked onchange="render()"> 背景画像を表示</label>
+        <label class="chk-label" style="margin-top:4px;"><input type="checkbox" id="lockBgImage" onchange="state.bgLocked=this.checked"> 下絵を固定（移動不可）</label>
+      </div>
+      <div class="calibrate-status" id="calibrateStatus">
+        敷地を描画後、「辺距離」ツールで辺をクリックして実距離を入力すると全辺の距離が確定します。
+      </div>
+      <button class="tool-btn" style="width:100%;justify-content:center;margin-top:6px;" onclick="removeBgImage()">背景画像を削除</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">出入口設定</div>
+      <div class="form-group">
+        <label>出入口の幅 (m)</label>
+        <input type="number" id="gateWidth" value="6.0" step="0.5" min="3.0" max="12.0">
+      </div>
+      <div class="form-group">
+        <label>出入口の奥行 (m) — 駐車禁止エリア</label>
+        <input type="number" id="gateDepth" value="8.0" step="0.5" min="3.0" max="20.0">
+      </div>
+      <div class="gate-list" id="gateList">
+        <div class="gate-empty" id="gateEmpty">出入口が未設定です。「出入口」ツールで敷地辺上をクリックしてください。</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">障害物エリア（樹木・構造物等）</div>
+      <div class="form-group">
+        <label>種類</label>
+        <div class="obs-type-selector">
+          <button class="obs-type-btn active" data-obstype="tree" onclick="setObsType('tree')">樹木</button>
+          <button class="obs-type-btn" data-obstype="pole" onclick="setObsType('pole')">電柱・柱</button>
+          <button class="obs-type-btn" data-obstype="structure" onclick="setObsType('structure')">構造物</button>
+          <button class="obs-type-btn" data-obstype="other" onclick="setObsType('other')">その他</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>マージン (m) — 障害物周囲の余白</label>
+        <input type="number" id="obsMargin" value="0.5" step="0.1" min="0" max="3.0">
+      </div>
+      <div id="obsList">
+        <div class="obs-empty" id="obsEmpty">障害物が未設定です。「障害物」ツールでキャンバス上をドラッグして矩形を描いてください。</div>
+      </div>
+    </div>
+
+    <div class="section manual-section" id="manualSection">
+      <div class="section-title">手動配置</div>
+      <div class="form-group">
+        <label>車両サイズ</label>
+        <div class="manual-size-selector">
+          <button class="manual-size-btn active" data-msize="standard" onclick="setManualSize('standard')">普通車<br><small>2.5×5.0</small></button>
+          <button class="manual-size-btn" data-msize="kei" onclick="setManualSize('kei')">軽自動車<br><small>2.0×3.6</small></button>
+          <button class="manual-size-btn" data-msize="large" onclick="setManualSize('large')">大型車<br><small>2.8×6.0</small></button>
+          <button class="manual-size-btn" data-msize="custom" onclick="setManualSize('custom')">サイズ指定</button>
+        </div>
+        <div class="manual-custom-inputs" id="manualCustomInputs">
+          <label style="font-size:11px;color:#666">幅</label>
+          <input type="number" id="manualW" value="2.5" step="0.1" min="1.5" max="5.0" onchange="onManualCustomChange()">
+          <label style="font-size:11px;color:#666">奥行</label>
+          <input type="number" id="manualD" value="5.0" step="0.1" min="2.0" max="10.0" onchange="onManualCustomChange()">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>配置角度</label>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="range" id="manualAngleSlider" min="0" max="359" value="0" step="1" style="flex:1" oninput="setManualAngleDirect(this.value)">
+          <input type="number" id="manualAngleInput" value="0" min="0" max="359" step="1" style="width:54px;padding:4px;border:1px solid #ccc;border-radius:4px;font-size:12px;" onchange="setManualAngleDirect(this.value)">
+          <span style="font-size:11px;color:#888">°</span>
+        </div>
+        <div style="display:flex;gap:4px;margin-top:4px;">
+          <button class="manual-size-btn" style="min-width:0;flex:1;padding:4px" onclick="setManualAngleDirect(0)">0°</button>
+          <button class="manual-size-btn" style="min-width:0;flex:1;padding:4px" onclick="setManualAngleDirect(45)">45°</button>
+          <button class="manual-size-btn" style="min-width:0;flex:1;padding:4px" onclick="setManualAngleDirect(90)">90°</button>
+          <button class="manual-size-btn" style="min-width:0;flex:1;padding:4px" onclick="setManualAngleDirect(135)">135°</button>
+          <button class="manual-size-btn" style="min-width:0;flex:1;padding:4px" onclick="setManualAngleDirect(180)">180°</button>
+        </div>
+        <div style="font-size:10px;color:#999;margin-top:3px;">Shift+スクロール: 1°刻み調整 / R: 90° / Q/E: ±5°</div>
+      </div>
+      <div class="form-group">
+        <button class="tool-btn" style="width:100%;justify-content:center;" onclick="undoManualSpace()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:4px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/></svg>
+          直前の配置を取り消す (Ctrl+Z)
+        </button>
+      </div>
+      <div class="form-group">
+        <label>配置済み（<span id="manualCount">0</span>台）</label>
+        <div class="manual-placed-list" id="manualPlacedList">
+          <div style="font-size:11px;color:#999;" id="manualEmpty">まだ配置されていません</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">車両タイプ</div>
+      <div class="form-group">
+        <select id="vehicleType" onchange="onVehicleChange()">
+          <option value="standard">普通自動車 (2.5m × 5.0m)</option>
+          <option value="kei">軽自動車 (2.0m × 3.6m)</option>
+          <option value="large">大型車 (2.8m × 6.0m)</option>
+          <option value="wheelchair">車椅子用 (3.5m × 5.0m)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">寸法設定 (メートル)</div>
+      <div class="form-row">
+        <div class="form-group"><label>区画幅</label><input type="number" id="spaceWidth" value="2.5" step="0.1" min="1.5" max="5.0"></div>
+        <div class="form-group"><label>区画奥行</label><input type="number" id="spaceDepth" value="5.0" step="0.1" min="3.0" max="8.0"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>通路幅</label><input type="number" id="aisleWidth" value="6.0" step="0.5" min="3.0" max="12.0"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">表示設定</div>
+      <div class="form-group"><label class="chk-label"><input type="checkbox" id="showGrid" checked onchange="render()"> グリッド表示</label></div>
+      <div class="form-group"><label class="chk-label"><input type="checkbox" id="showDimensions" checked onchange="render()"> 寸法線表示</label></div>
+      <div class="form-group"><label class="chk-label"><input type="checkbox" id="showNumbers" checked onchange="render()"> 番号表示</label></div>
+      <div class="form-group">
+        <label>線色</label>
+        <select id="lineColor" onchange="render()">
+          <option value="#FFD700" selected>黄</option>
+          <option value="#FFFFFF">白</option>
+          <option value="#FF6347">赤</option>
+          <option value="#4169E1">青</option>
+          <option value="#00FF7F">緑</option>
+          <option value="#FF8C00">橙</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">シミュレーション結果</div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-value" id="statSpaces">0</div><div class="stat-label">駐車台数（合計）</div></div>
+        <div class="stat-card"><div class="stat-value" id="statArea">0</div><div class="stat-label">敷地面積 (㎡)</div></div>
+        <div class="stat-card"><div class="stat-value" id="statEfficiency">0%</div><div class="stat-label">面積効率</div></div>
+        <div class="stat-card"><div class="stat-value" id="statAisle">0</div><div class="stat-label">通路面積 (㎡)</div></div>
+      </div>
+      <div id="statByType" style="margin-top:8px;font-size:12px;color:#555;line-height:1.8;"></div>
+    </div>
+
+    <div class="section">
+      <div style="background:#f0f4f8;border-radius:8px;padding:12px;font-size:11px;color:#666;line-height:1.5;">
+        <strong>ナイヤガラ開発営業支援システム</strong><br>駐車場区画線シミュレーター ver1.0
+      </div>
+    </div>
+  </div>
+
+  <div class="canvas-area" id="canvasArea">
+    <canvas id="mainCanvas"></canvas>
+    <div class="canvas-info" id="canvasInfo">スケール: 1m = 20px | クリックで敷地を描画</div>
+    <div class="zoom-controls">
+      <button class="zoom-btn" onclick="zoomIn()">+</button>
+      <button class="zoom-btn" onclick="zoomOut()">-</button>
+      <button class="zoom-btn" onclick="zoomFit()" title="フィット">&#8865;</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="helpModal">
+  <div class="modal">
+    <h2>使い方ガイド</h2>
+    <p>
+      <strong>0. 背景画像を読み込む（任意）:</strong> Google Maps の航空写真や敷地図面のスクリーンショットをサイドバーからアップロードします。Shift+ドラッグで画像位置を調整できます。<br><br>
+      <strong>1. 敷地を描く:</strong> 「敷地を描く」を選択し、背景画像や図面を下敷きにして敷地の外周をなぞるようにクリックします。ダブルクリックで確定。「矩形」ツールではドラッグで四角形を描けます。<br><br>
+      <strong>2. 辺の距離を確定する:</strong> 「辺距離」ツールを選択し、長さがわかっている辺をクリックして実際のメートル数を入力します。入力した辺を基準に、他の全ての辺の距離が自動で算出されます。<br><br>
+      <strong>3. 出入口を配置:</strong> 「出入口」ツールを選択し、敷地の辺の付近をクリックします。出入口は最も近い辺上に自動スナップされます。幅と奥行はサイドバーで調整可能。出入口周辺は駐車禁止エリアとなり、車両が通行できる通路が確保されます。<br><br>
+      <strong>4. 障害物を配置:</strong> 「障害物」ツールを選択し、キャンバス上をドラッグして樹木や構造物などの駐車禁止エリアを矩形で描きます。種類とマージンはサイドバーで設定可能。<br><br>
+      <strong>5. パラメータ設定:</strong> 左サイドバーで車両タイプ、寸法を設定します。<br><br>
+      <strong>6. 手動配置:</strong> 「手動配置」ツールで1台ずつクリックして自由に配置。グリッドや敷地辺に自動吸着。[R]90°回転 / [Q/E]±5° / ドラッグ:移動 / Shift+ドラッグ:回転 / Ctrl+C:コピー / Ctrl+V:ペースト / Ctrl+D:複製 / 右クリック:削除。<br><br>
+      <strong>7. 自動配置:</strong> 「自動配置」ボタンで敷地境界の各辺に沿って車を自動配置します（手動配置済みの車は保持）。Ctrl+Zで取り消し可能。<br><br>
+      <strong>8. メジャー:</strong> 「メジャー」ツールで2点間の距離を計測。端点をドラッグで移動。Deleteで削除。メジャーは他のツール使用中も表示されます。<br><br>
+      <strong>9. PDF出力:</strong> 「PDF出力」ボタンで図面と統計情報をPDFダウンロードできます。
+    </p>
+    <div class="btn-row"><button class="btn btn-primary" onclick="closeHelp()">閉じる</button></div>
+  </div>
+</div>
+
+<script>
+// ===== State =====
+var state = {
+  tool: 'draw',
+  polygons: [],
+  currentPoly: null,
+  parkingSpaces: [],
+  gates: [],
+  obstacles: [],
+  obsType: 'tree',
+  obsStart: null,
+  obsDragging: false,
+  // Background image & calibration
+  bgImage: null,        // HTMLImageElement
+  bgImageLoaded: false,
+  bgOpacity: 0.5,
+  bgPixelsPerMeter: 0,  // image pixels per world meter
+  bgOffsetX: 0,         // world coords of image top-left
+  bgOffsetY: 0,
+  bgLocked: false,      // lock background image position
+  bgDragging: false,    // dragging background image
+  bgDragStart: null,    // {sx, sy, offX, offY} for bg drag
+  calibrated: false,    // whether edge distance has been entered
+  calibEdge: null,      // {polyIdx, edgeIdx, realDist} the reference edge
+  polyRotation: 0,      // (legacy, kept for snapshot compat)
+  polyRotLocked: false, // (legacy, kept for snapshot compat)
+  manualAngle: 0,        // rotation angle for manual placement (degrees)
+  manualSizeType: 'standard', // 'standard' | 'kei' | 'large' | 'custom'
+  manualW: 2.5,          // manual placement width
+  manualD: 5.0,          // manual placement depth
+  manualHistory: [],     // stack of placed space indices for undo
+  hoveredSpaceIdx: -1,   // index of space under mouse cursor
+  clearSnapshot: null,   // snapshot before clearAll for undo
+  rotatingSpaceIdx: -1,  // index of space being rotated by drag
+  rotateStartAngle: 0,   // starting angle of rotation drag
+  rotateStartMouseAngle: 0, // mouse angle at start of rotation drag
+  movingSpaceIdx: -1,    // index of space being moved by drag
+  moveOffsetX: 0,        // offset from space center to mouse at drag start
+  moveOffsetY: 0,
+  copiedSpace: null,     // copied space data for paste
+  copiedSpaces: null,    // copied multi-space data for paste (select tool)
+  // Select tool: space selection & grouping
+  selectedSpaces: [],       // array of selected space indices
+  spaceGroups: [],          // array of arrays of space indices (groups)
+  selectDragging: false,    // dragging selected spaces
+  selectDragOffset: null,   // {x, y} offset from centroid
+  selectRotating: false,    // rotating selected spaces
+  selectRotateCenter: null, // {x, y} center of rotation
+  selectRotateStart: 0,     // starting mouse angle
+  selectRotateAngles: [],   // starting angles of each space
+  selectRotatePositions: [], // starting positions of each space
+  // Undo stack for deletions
+  deleteUndoStack: [],     // [{type:'spaces', items:[...], groups:[...]}, {type:'obstacle', item:{...}, index:N}, ...]
+  // Auto-layout pattern cycling
+  autoPatterns: [],        // array of {spaces:[], label:'', count:N}
+  autoPatternIdx: -1,      // current pattern index (-1 = not cycling)
+  // Gate/Obstacle interaction
+  hoveredGateIdx: -1,
+  hoveredObsIdx: -1,
+  movingGateIdx: -1,
+  movingGateOffset: null,
+  movingObsIdx: -1,
+  movingObsOffset: null,
+  rotatingObsIdx: -1,     // obstacle being rotated by Shift+drag
+  rotatingObsStart: null,  // {cx, cy, mouseAngle, x1, y1, x2, y2} at rotation start
+  // Measure tool
+  measurePoints: [],     // [{x,y}, {x,y}] world coords of measure endpoints
+  measureDragging: -1,   // which endpoint is being dragged (-1=none, 0=first, 1=second)
+  angle: 90,
+  vehicleType: 'standard',
+  zoom: 1,
+  panX: 50,
+  panY: 50,
+  dragging: false,
+  dragStart: null,
+  rectStart: null,
+  rectDragging: false,
+};
+
+var VEHICLE_SIZES = {
+  standard:   { w: 2.5, d: 5.0, label: '普通車' },
+  kei:        { w: 2.0, d: 3.6, label: '軽自動車' },
+  large:      { w: 2.8, d: 6.0, label: '大型車' },
+  wheelchair: { w: 3.5, d: 5.0, label: '車椅子用' },
+};
+
+var SCALE = 20;
+var canvas = document.getElementById('mainCanvas');
+var ctx = canvas.getContext('2d');
+var canvasArea = document.getElementById('canvasArea');
+
+function resizeCanvas() {
+  canvas.width = canvasArea.clientWidth;
+  canvas.height = canvasArea.clientHeight;
+  render();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function screenToWorld(sx, sy) {
+  return { x: (sx - state.panX) / (SCALE * state.zoom), y: (sy - state.panY) / (SCALE * state.zoom) };
+}
+function worldToScreen(wx, wy) {
+  return { x: wx * SCALE * state.zoom + state.panX, y: wy * SCALE * state.zoom + state.panY };
+}
+
+// ===== Tools =====
+function setTool(t) {
+  state.tool = t;
+  document.querySelectorAll('.toolbar .tool-btn').forEach(function(b) { b.classList.remove('active'); });
+  var id = 'tool' + t.charAt(0).toUpperCase() + t.slice(1);
+  var btn = document.getElementById(id);
+  if (btn) btn.classList.add('active');
+  if (t === 'gate') { canvas.style.cursor = 'pointer'; }
+  else if (t === 'calibrate') {
+    canvas.style.cursor = 'pointer';
+    updateCalibrateStatus();
+  }
+  else if (t === 'manual') {
+    canvas.style.cursor = 'crosshair';
+  }
+  else if (t === 'measure') {
+    canvas.style.cursor = 'crosshair';
+  }
+  else if (t === 'draw' || t === 'rect' || t === 'obstacle') { canvas.style.cursor = 'crosshair'; }
+  else { canvas.style.cursor = 'default'; }
+  // Show/hide manual placement section
+  var manualSec = document.getElementById('manualSection');
+  if (manualSec) {
+    if (t === 'manual') manualSec.classList.add('visible');
+    else manualSec.classList.remove('visible');
+  }
+}
+
+// ===== Polygon Rotation (removed — stubs kept for snapshot compat) =====
+function onPolyRotChange() {}
+function applyPolyRotation() {}
+function resetPolyRotation() {}
+function onPolyRotLockChange() {}
+
+function onVehicleChange() {
+  var v = document.getElementById('vehicleType').value;
+  state.vehicleType = v;
+  var size = VEHICLE_SIZES[v];
+  document.getElementById('spaceWidth').value = size.w;
+  document.getElementById('spaceDepth').value = size.d;
+}
+
+// ===== Gate/Obstacle Hit Testing =====
+function findGateAtWorld(wx, wy) {
+  for (var g = state.gates.length - 1; g >= 0; g--) {
+    var gate = state.gates[g];
+    var gcx = gate.x + gate.normalX * gate.depth / 2;
+    var gcy = gate.y + gate.normalY * gate.depth / 2;
+    var rad = -gate.edgeAngle * Math.PI / 180;
+    var cos = Math.cos(rad), sin = Math.sin(rad);
+    var dx = wx - gcx, dy = wy - gcy;
+    var lx = dx * cos - dy * sin;
+    var ly = dx * sin + dy * cos;
+    if (Math.abs(lx) <= gate.width / 2 + 0.5 && Math.abs(ly) <= gate.depth / 2 + 0.5) return g;
+  }
+  return -1;
+}
+
+function findObsAtWorld(wx, wy) {
+  for (var o = state.obstacles.length - 1; o >= 0; o--) {
+    var obs = state.obstacles[o];
+    var ocx = (obs.x1 + obs.x2) / 2, ocy = (obs.y1 + obs.y2) / 2;
+    var ow = Math.abs(obs.x2 - obs.x1), oh = Math.abs(obs.y2 - obs.y1);
+    var oAngle = obs.angle || 0;
+    var rad = -oAngle * Math.PI / 180;
+    var cos = Math.cos(rad), sin = Math.sin(rad);
+    var dx = wx - ocx, dy = wy - ocy;
+    var lx = dx * cos - dy * sin;
+    var ly = dx * sin + dy * cos;
+    if (Math.abs(lx) <= ow / 2 + 0.3 && Math.abs(ly) <= oh / 2 + 0.3) return o;
+  }
+  return -1;
+}
+
+// ===== Gate (Entrance/Exit) Logic =====
+function findNearestEdge(wx, wy) {
+  var bestDist = Infinity, bestResult = null;
+  for (var pi = 0; pi < state.polygons.length; pi++) {
+    var poly = state.polygons[pi];
+    if (!poly.closed) continue;
+    for (var ei = 0; ei < poly.points.length; ei++) {
+      var ej = (ei + 1) % poly.points.length;
+      var p1 = poly.points[ei], p2 = poly.points[ej];
+      var dx = p2.x - p1.x, dy = p2.y - p1.y;
+      var len2 = dx * dx + dy * dy;
+      if (len2 === 0) continue;
+      var t = Math.max(0, Math.min(1, ((wx - p1.x) * dx + (wy - p1.y) * dy) / len2));
+      var projX = p1.x + t * dx, projY = p1.y + t * dy;
+      var dist = Math.sqrt(Math.pow(wx - projX, 2) + Math.pow(wy - projY, 2));
+      if (dist < bestDist) {
+        bestDist = dist;
+        var edgeLen = Math.sqrt(len2);
+        // Normal pointing inward (left of edge direction)
+        var nx = -dy / edgeLen, ny = dx / edgeLen;
+        // Check if normal points inside polygon
+        var testX = projX + nx * 0.5, testY = projY + ny * 0.5;
+        if (!pointInPolygon(testX, testY, poly.points)) {
+          nx = -nx; ny = -ny;
+        }
+        bestResult = {
+          x: projX, y: projY, polyIdx: pi, edgeIdx: ei,
+          normalX: nx, normalY: ny,
+          edgeAngle: Math.atan2(dy, dx) * 180 / Math.PI,
+          dist: dist
+        };
+      }
+    }
+  }
+  return bestResult;
+}
+
+function addGate(wx, wy) {
+  if (state.polygons.length === 0) { alert('先に敷地を描いてください。'); return; }
+  var result = findNearestEdge(wx, wy);
+  if (!result || result.dist > 5) { alert('敷地の辺の近くをクリックしてください。'); return; }
+
+  var gateW = parseFloat(document.getElementById('gateWidth').value);
+  var gateD = parseFloat(document.getElementById('gateDepth').value);
+
+  state.gates.push({
+    x: result.x, y: result.y,
+    polyIdx: result.polyIdx, edgeIdx: result.edgeIdx,
+    width: gateW, depth: gateD,
+    normalX: result.normalX, normalY: result.normalY,
+    edgeAngle: result.edgeAngle
+  });
+
+  updateGateList();
+  render();
+}
+
+function removeGate(idx) {
+  var removed = state.gates.splice(idx, 1)[0];
+  state.deleteUndoStack.push({ type: 'gate', item: JSON.parse(JSON.stringify(removed)), index: idx });
+  updateGateList();
+  render();
+}
+
+function updateGateList() {
+  invalidateAutoPatterns();
+  var listEl = document.getElementById('gateList');
+  var emptyEl = document.getElementById('gateEmpty');
+  // Remove old items (keep empty msg)
+  var items = listEl.querySelectorAll('.gate-item');
+  for (var i = 0; i < items.length; i++) items[i].remove();
+
+  if (state.gates.length === 0) {
+    emptyEl.style.display = 'block';
+  } else {
+    emptyEl.style.display = 'none';
+    for (var g = 0; g < state.gates.length; g++) {
+      var gate = state.gates[g];
+      var div = document.createElement('div');
+      div.className = 'gate-item';
+      div.innerHTML = '<div><span class="gate-label">出入口 ' + (g + 1) + '</span><br>' +
+        '<span class="gate-info">' + gate.width.toFixed(1) + 'm幅 / 禁止域' + gate.depth.toFixed(1) + 'm</span></div>' +
+        '<button class="gate-delete" onclick="removeGate(' + g + ')" title="削除">&#10005;</button>';
+      listEl.appendChild(div);
+    }
+  }
+}
+
+function getGateExclusionZones() {
+  // Returns array of {cx, cy, hw, hh, angle} rectangles for exclusion
+  var zones = [];
+  for (var g = 0; g < state.gates.length; g++) {
+    var gate = state.gates[g];
+    // Rectangle centered along gate normal, starting from gate position
+    var cx = gate.x + gate.normalX * gate.depth / 2;
+    var cy = gate.y + gate.normalY * gate.depth / 2;
+    zones.push({
+      cx: cx, cy: cy,
+      halfW: gate.width / 2,
+      halfD: gate.depth / 2,
+      angle: gate.edgeAngle,  // degrees
+      gate: gate
+    });
+  }
+  return zones;
+}
+
+function isInExclusionZone(px, py, zones) {
+  for (var z = 0; z < zones.length; z++) {
+    var zone = zones[z];
+    var rad = -zone.angle * Math.PI / 180;
+    var cosA = Math.cos(rad), sinA = Math.sin(rad);
+    // Transform point to zone local coords
+    var dx = px - zone.cx, dy = py - zone.cy;
+    var lx = dx * cosA - dy * sinA;
+    var ly = dx * sinA + dy * cosA;
+    if (Math.abs(lx) <= zone.halfW + 0.3 && Math.abs(ly) <= zone.halfD + 0.3) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isSpaceInExclusionZone(space, zones) {
+  // Check if any corner of the parking space is in an exclusion zone
+  var rad = space.angle * Math.PI / 180;
+  var cosA = Math.cos(rad), sinA = Math.sin(rad);
+  var hw = space.w / 2, hh = space.h / 2;
+  var corners = [
+    { dx: -hw, dy: -hh }, { dx: hw, dy: -hh },
+    { dx: hw, dy: hh }, { dx: -hw, dy: hh },
+    { dx: 0, dy: 0 }  // center too
+  ];
+  for (var c = 0; c < corners.length; c++) {
+    var rx = space.x + corners[c].dx * cosA - corners[c].dy * sinA;
+    var ry = space.y + corners[c].dx * sinA + corners[c].dy * cosA;
+    if (isInExclusionZone(rx, ry, zones)) return true;
+  }
+  return false;
+}
+
+// ===== Background Image & Calibration =====
+function onBgImageUpload(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var img = new Image();
+    img.onload = function() {
+      state.bgImage = img;
+      state.bgImageLoaded = true;
+      state.bgOffsetX = 0;
+      state.bgOffsetY = 0;
+      // Default: fit image to canvas width in world meters (zoom-independent)
+      var canvasWorldWidth = canvas.width / SCALE;
+      state.bgPixelsPerMeter = img.width / canvasWorldWidth;
+      document.getElementById('imgUploadArea').classList.add('has-image');
+      document.getElementById('imgUploadLabel').textContent = file.name + ' (' + img.width + 'x' + img.height + ')';
+      updateCalibrateStatus();
+      render();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeBgImage() {
+  state.bgImage = null;
+  state.bgImageLoaded = false;
+  document.getElementById('imgUploadArea').classList.remove('has-image');
+  document.getElementById('imgUploadLabel').innerHTML = 'クリックして航空写真・図面を<br>アップロード（PNG/JPG）';
+  document.getElementById('bgImageInput').value = '';
+  updateCalibrateStatus();
+  render();
+}
+
+function onBgOpacityChange(val) {
+  state.bgOpacity = val / 100;
+  document.getElementById('bgOpacityVal').textContent = val + '%';
+  render();
+}
+
+function updateCalibrateStatus() {
+  var el = document.getElementById('calibrateStatus');
+  if (state.polygons.length === 0) {
+    el.className = 'calibrate-status';
+    el.textContent = '先に敷地を描いてください。描画後、「辺距離」ツールで辺をクリックして実距離を入力します。';
+  } else if (state.calibrated) {
+    el.className = 'calibrate-status done';
+    var ref = state.calibEdge;
+    el.textContent = '校正済み（基準辺: ' + ref.realDist.toFixed(1) + 'm）。別の辺をクリックして再校正も可能です。Shift+ドラッグで画像移動。';
+  } else {
+    el.className = 'calibrate-status active';
+    el.textContent = '敷地の辺をクリックし、その辺の実際の距離（メートル）を入力してください。他の辺は自動で算出されます。';
+  }
+}
+
+function handleCalibrateClick(wx, wy) {
+  if (state.polygons.length === 0) {
+    alert('先に敷地を描いてください。');
+    return;
+  }
+  var snap = findNearestEdge(wx, wy);
+  if (!snap || snap.dist > 3) {
+    alert('敷地の辺の近くをクリックしてください。');
+    return;
+  }
+  var poly = state.polygons[snap.polyIdx];
+  var p1 = poly.points[snap.edgeIdx];
+  var p2 = poly.points[(snap.edgeIdx + 1) % poly.points.length];
+  var currentLen = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+
+  var distStr = prompt('この辺の実際の距離（メートル）を入力してください：\n現在の描画上の長さ: ' + currentLen.toFixed(2) + ' 単位', currentLen.toFixed(1));
+  if (!distStr || parseFloat(distStr) <= 0) return;
+
+  var realDist = parseFloat(distStr);
+  var ratio = realDist / currentLen;
+
+  rescaleWorld(ratio);
+
+  state.calibrated = true;
+  state.calibEdge = { polyIdx: snap.polyIdx, edgeIdx: snap.edgeIdx, realDist: realDist };
+  updateCalibrateStatus();
+  render();
+}
+
+function rescaleWorld(ratio) {
+  // Rescale all polygon coordinates around world origin
+  for (var pi = 0; pi < state.polygons.length; pi++) {
+    var poly = state.polygons[pi];
+    for (var j = 0; j < poly.points.length; j++) {
+      poly.points[j].x *= ratio;
+      poly.points[j].y *= ratio;
+    }
+  }
+  // Rescale current polygon if being drawn
+  if (state.currentPoly) {
+    for (var k = 0; k < state.currentPoly.points.length; k++) {
+      state.currentPoly.points[k].x *= ratio;
+      state.currentPoly.points[k].y *= ratio;
+    }
+  }
+  // Rescale gates
+  for (var gi = 0; gi < state.gates.length; gi++) {
+    state.gates[gi].x *= ratio;
+    state.gates[gi].y *= ratio;
+  }
+  // Rescale obstacles
+  for (var oi = 0; oi < state.obstacles.length; oi++) {
+    state.obstacles[oi].x1 *= ratio;
+    state.obstacles[oi].y1 *= ratio;
+    state.obstacles[oi].x2 *= ratio;
+    state.obstacles[oi].y2 *= ratio;
+  }
+  // Rescale parking spaces
+  for (var si = 0; si < state.parkingSpaces.length; si++) {
+    state.parkingSpaces[si].x *= ratio;
+    state.parkingSpaces[si].y *= ratio;
+  }
+  // Rescale background image offset and pixels-per-meter
+  if (state.bgImageLoaded && state.bgPixelsPerMeter > 0 && !state.bgLocked) {
+    state.bgOffsetX *= ratio;
+    state.bgOffsetY *= ratio;
+    state.bgPixelsPerMeter = state.bgPixelsPerMeter / ratio;
+  }
+  // Adjust pan to keep view centered
+  state.panX *= 1; // panX/panY are screen pixels, no rescale needed
+  // But we need to adjust so the view doesn't jump
+  // The world point at canvas center was: centerW = (canvasCenter - pan) / (SCALE * zoom)
+  // After rescale, the same visual point is now at centerW * ratio
+  // We want the screen to show the same area, so adjust pan
+  var cx = canvas.width / 2, cy = canvas.height / 2;
+  var centerWx = (cx - state.panX) / (SCALE * state.zoom);
+  var centerWy = (cy - state.panY) / (SCALE * state.zoom);
+  var newCenterWx = centerWx * ratio;
+  var newCenterWy = centerWy * ratio;
+  state.panX = cx - newCenterWx * SCALE * state.zoom;
+  state.panY = cy - newCenterWy * SCALE * state.zoom;
+}
+
+function drawEdgeHighlight() {
+  if (state.tool !== 'calibrate' || state.polygons.length === 0) return;
+  var snap = findNearestEdge(mouseWorld.x, mouseWorld.y);
+  if (!snap || snap.dist > 3) return;
+
+  var poly = state.polygons[snap.polyIdx];
+  var p1 = poly.points[snap.edgeIdx];
+  var p2 = poly.points[(snap.edgeIdx + 1) % poly.points.length];
+  var s1 = worldToScreen(p1.x, p1.y);
+  var s2 = worldToScreen(p2.x, p2.y);
+
+  // Highlight edge
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+  ctx.strokeStyle = '#e74c3c'; ctx.lineWidth = 4; ctx.stroke();
+
+  // Show length label
+  var dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+  var mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
+  var dx = s2.x - s1.x, dy = s2.y - s1.y;
+  var len = Math.sqrt(dx * dx + dy * dy) || 1;
+  var nx = -dy / len * 20, ny = dx / len * 20;
+
+  // Background pill
+  var label = dist.toFixed(1) + 'm';
+  ctx.font = 'bold 12px sans-serif';
+  var tw = ctx.measureText(label).width;
+  ctx.fillStyle = 'rgba(231,76,60,0.9)';
+  var rx = mx + nx - tw / 2 - 6, ry = my + ny - 10, rw = tw + 12, rh = 20, rr = 4;
+  ctx.beginPath();
+  ctx.moveTo(rx + rr, ry); ctx.lineTo(rx + rw - rr, ry);
+  ctx.arcTo(rx + rw, ry, rx + rw, ry + rr, rr);
+  ctx.lineTo(rx + rw, ry + rh - rr);
+  ctx.arcTo(rx + rw, ry + rh, rx + rw - rr, ry + rh, rr);
+  ctx.lineTo(rx + rr, ry + rh);
+  ctx.arcTo(rx, ry + rh, rx, ry + rh - rr, rr);
+  ctx.lineTo(rx, ry + rr);
+  ctx.arcTo(rx, ry, rx + rr, ry, rr);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+  ctx.fillText(label, mx + nx, my + ny + 4);
+  ctx.textAlign = 'start';
+
+  // "クリックで距離入力" hint
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('クリックで距離入力', mx + nx, my + ny + 18);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+function drawBgImage() {
+  if (!state.bgImageLoaded || !state.bgImage) return;
+  if (!document.getElementById('showBgImage').checked) return;
+
+  var img = state.bgImage;
+  // Image dimensions in world units
+  var imgWorldW = img.width / state.bgPixelsPerMeter;
+  var imgWorldH = img.height / state.bgPixelsPerMeter;
+
+  var topLeft = worldToScreen(state.bgOffsetX, state.bgOffsetY);
+  var botRight = worldToScreen(state.bgOffsetX + imgWorldW, state.bgOffsetY + imgWorldH);
+  var drawW = botRight.x - topLeft.x;
+  var drawH = botRight.y - topLeft.y;
+
+  ctx.save();
+  ctx.globalAlpha = state.bgOpacity;
+  ctx.drawImage(img, topLeft.x, topLeft.y, drawW, drawH);
+  ctx.restore();
+}
+
+// drawCalibrationPoints replaced by drawEdgeHighlight (defined above)
+
+// ===== Manual Placement (手動配置) =====
+var SNAP_GRID = 0.25; // world unit grid for basic snapping
+var SNAP_MAGNETIC = 0.5; // distance threshold for magnetic snap to nearby spaces
+
+function getManualSpaceSize() {
+  return { w: state.manualW, h: state.manualD };
+}
+
+function setManualSize(type) {
+  state.manualSizeType = type;
+  document.querySelectorAll('.manual-size-btn').forEach(function(b) { b.classList.remove('active'); });
+  var btn = document.querySelector('.manual-size-btn[data-msize="' + type + '"]');
+  if (btn) btn.classList.add('active');
+
+  var customInputs = document.getElementById('manualCustomInputs');
+  if (type === 'custom') {
+    customInputs.classList.add('visible');
+    state.manualW = parseFloat(document.getElementById('manualW').value) || 2.5;
+    state.manualD = parseFloat(document.getElementById('manualD').value) || 5.0;
+  } else {
+    customInputs.classList.remove('visible');
+    var sizes = VEHICLE_SIZES[type];
+    if (sizes) {
+      state.manualW = sizes.w;
+      state.manualD = sizes.d;
+    }
+  }
+  render();
+}
+
+function onManualCustomChange() {
+  state.manualW = parseFloat(document.getElementById('manualW').value) || 2.5;
+  state.manualD = parseFloat(document.getElementById('manualD').value) || 5.0;
+  render();
+}
+
+function setManualAngleDirect(deg) {
+  state.manualAngle = ((parseInt(deg) || 0) % 360 + 360) % 360;
+  document.getElementById('manualAngleSlider').value = state.manualAngle;
+  document.getElementById('manualAngleInput').value = state.manualAngle;
+  render();
+}
+
+function snapToGrid(val) {
+  return Math.round(val / SNAP_GRID) * SNAP_GRID;
+}
+
+var EDGE_SNAP_DIST = 2.0; // world meters: distance threshold for edge snapping
+
+function findEdgeSnap(wx, wy) {
+  // Find the nearest polygon edge and return snap info if close enough
+  var size = getManualSpaceSize();
+  var bestDist = EDGE_SNAP_DIST;
+  var bestSnap = null;
+
+  for (var pi = 0; pi < state.polygons.length; pi++) {
+    var poly = state.polygons[pi];
+    if (!poly.closed) continue;
+    for (var ei = 0; ei < poly.points.length; ei++) {
+      var ej = (ei + 1) % poly.points.length;
+      var p1 = poly.points[ei], p2 = poly.points[ej];
+      var edx = p2.x - p1.x, edy = p2.y - p1.y;
+      var edgeLen2 = edx * edx + edy * edy;
+      if (edgeLen2 === 0) continue;
+      var edgeLen = Math.sqrt(edgeLen2);
+      // Project cursor onto edge
+      var t = ((wx - p1.x) * edx + (wy - p1.y) * edy) / edgeLen2;
+      t = Math.max(0, Math.min(1, t));
+      var projX = p1.x + t * edx, projY = p1.y + t * edy;
+      var dist = Math.sqrt(Math.pow(wx - projX, 2) + Math.pow(wy - projY, 2));
+
+      if (dist < bestDist) {
+        // Edge angle
+        var edgeAngle = Math.atan2(edy, edx) * 180 / Math.PI;
+        // Inward normal
+        var nx = -edy / edgeLen, ny = edx / edgeLen;
+        var testX = projX + nx * 0.5, testY = projY + ny * 0.5;
+        if (!pointInPolygon(testX, testY, poly.points)) {
+          nx = -nx; ny = -ny;
+        }
+        // Position: offset the car center inward by half-depth along the normal
+        var offsetDist = size.h / 2;
+        var snapX = projX + nx * offsetDist;
+        var snapY = projY + ny * offsetDist;
+        // Snap angle: align car's long axis along the edge
+        // Car angle should be the edge angle (so width is along edge, depth is inward)
+        var snapAngle = ((edgeAngle + 360) % 360);
+
+        bestDist = dist;
+        bestSnap = {
+          x: snapX, y: snapY, angle: snapAngle,
+          edgeAngle: edgeAngle, projX: projX, projY: projY,
+          nx: nx, ny: ny, edgeLen: edgeLen,
+          p1: p1, p2: p2, t: t
+        };
+      }
+    }
+  }
+
+  if (bestSnap) {
+    // Further snap position along the edge to grid multiples of car width
+    var edx = bestSnap.p2.x - bestSnap.p1.x;
+    var edy = bestSnap.p2.y - bestSnap.p1.y;
+    var edgeLen = bestSnap.edgeLen;
+    // Distance along edge from p1
+    var alongEdge = bestSnap.t * edgeLen;
+    // Snap to car-width grid along edge (offset by half-width from start)
+    var carW = size.w;
+    var slotIdx = Math.round((alongEdge - carW / 2) / carW);
+    var snappedAlong = slotIdx * carW + carW / 2;
+    snappedAlong = Math.max(carW / 2, Math.min(edgeLen - carW / 2, snappedAlong));
+    var tSnapped = snappedAlong / edgeLen;
+    var newProjX = bestSnap.p1.x + tSnapped * edx;
+    var newProjY = bestSnap.p1.y + tSnapped * edy;
+    bestSnap.x = newProjX + bestSnap.nx * (size.h / 2);
+    bestSnap.y = newProjY + bestSnap.ny * (size.h / 2);
+  }
+
+  return bestSnap;
+}
+
+function snapManualPosition(wx, wy) {
+  var size = getManualSpaceSize();
+
+  // Edge snap takes priority if cursor is close to a polygon edge
+  var edgeSnap = findEdgeSnap(wx, wy);
+  if (edgeSnap) {
+    state._edgeSnapActive = true;
+    state._edgeSnapAngle = edgeSnap.angle;
+    return { x: edgeSnap.x, y: edgeSnap.y };
+  }
+  state._edgeSnapActive = false;
+
+  var angleRad = state.manualAngle * Math.PI / 180;
+  // Basic grid snap
+  var sx = snapToGrid(wx);
+  var sy = snapToGrid(wy);
+
+  // Magnetic snap to nearby existing spaces with same angle
+  if (state.parkingSpaces.length > 0) {
+    var bestDistSq = SNAP_MAGNETIC * SNAP_MAGNETIC * 4;
+    var snapX = sx, snapY = sy;
+    var cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+
+    for (var i = 0; i < state.parkingSpaces.length; i++) {
+      var sp = state.parkingSpaces[i];
+      // Only snap to spaces with similar angle (within 5 degrees)
+      var angleDiff = Math.abs(((sp.angle - state.manualAngle) % 360 + 360) % 360);
+      if (angleDiff > 5 && angleDiff < 355) continue;
+
+      var dx = sx - sp.x;
+      var dy = sy - sp.y;
+      // Project delta onto space's local axes
+      var localX = dx * cosA + dy * sinA;
+      var localY = -dx * sinA + dy * cosA;
+
+      // Snap along width axis (side by side)
+      var snapW = sp.w; // width of existing space
+      var nW = Math.round(localX / snapW);
+      if (nW !== 0) {
+        var candidateLocalX = nW * snapW;
+        var residualX = Math.abs(localX - candidateLocalX);
+        // Snap along depth axis (front to back)
+        var snapD = sp.h;
+        var nD = Math.round(localY / snapD);
+        var candidateLocalY = nD * snapD;
+        var residualY = Math.abs(localY - candidateLocalY);
+
+        if (residualX < SNAP_MAGNETIC && residualY < SNAP_MAGNETIC) {
+          var cand = {
+            x: sp.x + candidateLocalX * cosA - candidateLocalY * sinA,
+            y: sp.y + candidateLocalX * sinA + candidateLocalY * cosA
+          };
+          var cdx = cand.x - wx, cdy = cand.y - wy;
+          var cdist = cdx * cdx + cdy * cdy;
+          if (cdist < bestDistSq) {
+            bestDistSq = cdist;
+            snapX = cand.x;
+            snapY = cand.y;
+          }
+        }
+      }
+
+      // Also try depth-only snap (same column)
+      var snapD2 = sp.h;
+      var nD2 = Math.round(localY / snapD2);
+      if (nD2 !== 0 && Math.abs(localX) < SNAP_MAGNETIC) {
+        var candidateLocalY2 = nD2 * snapD2;
+        var cand2 = {
+          x: sp.x + localX * cosA - candidateLocalY2 * sinA, // keep exact X alignment
+          y: sp.y + localX * sinA + candidateLocalY2 * cosA
+        };
+        // Snap X to exactly match
+        cand2.x = sp.x - candidateLocalY2 * sinA;
+        cand2.y = sp.y + candidateLocalY2 * cosA;
+        var cdx2 = cand2.x - wx, cdy2 = cand2.y - wy;
+        var cdist2 = cdx2 * cdx2 + cdy2 * cdy2;
+        if (cdist2 < bestDistSq) {
+          bestDistSq = cdist2;
+          snapX = cand2.x;
+          snapY = cand2.y;
+        }
+      }
+    }
+    sx = snapX;
+    sy = snapY;
+  }
+
+  return { x: sx, y: sy };
+}
+
+function placeManualSpace(wx, wy) {
+  var snapped = snapManualPosition(wx, wy);
+  var size = getManualSpaceSize();
+  // Use edge-snapped angle if active, otherwise manual angle
+  var placeAngle = state._edgeSnapActive ? state._edgeSnapAngle : state.manualAngle;
+  // Determine vehicle type label for manual placement
+  var vtype = state.manualSizeType === 'custom' ? 'standard' : state.manualSizeType;
+  var newSpace = {
+    x: snapped.x,
+    y: snapped.y,
+    w: size.w,
+    h: size.h,
+    angle: placeAngle,
+    type: vtype,
+    num: 0,
+    manual: true
+  };
+
+  // Check if it overlaps an existing space (prevent doubles)
+  for (var i = 0; i < state.parkingSpaces.length; i++) {
+    var sp = state.parkingSpaces[i];
+    if (Math.abs(sp.x - newSpace.x) < 0.1 && Math.abs(sp.y - newSpace.y) < 0.1 &&
+        Math.abs(sp.angle - newSpace.angle) < 1) {
+      return; // duplicate position, skip
+    }
+  }
+
+  state.parkingSpaces.push(newSpace);
+  state.manualHistory.push(state.parkingSpaces.length - 1);
+  renumberSpaces();
+  updateManualList();
+  updateStats();
+  render();
+}
+
+function undoManualSpace() {
+  if (state.manualHistory.length === 0) return;
+  // Find the last manually placed space that still exists
+  while (state.manualHistory.length > 0) {
+    var lastIdx = state.manualHistory.pop();
+    if (lastIdx < state.parkingSpaces.length && state.parkingSpaces[lastIdx] && state.parkingSpaces[lastIdx].manual) {
+      state.parkingSpaces.splice(lastIdx, 1);
+      // Fix remaining history indices
+      for (var h = 0; h < state.manualHistory.length; h++) {
+        if (state.manualHistory[h] > lastIdx) state.manualHistory[h]--;
+      }
+      renumberSpaces();
+      updateManualList();
+      updateStats();
+      render();
+      return;
+    }
+  }
+}
+
+function removeSpaceByIndex(idx) {
+  if (idx < 0 || idx >= state.parkingSpaces.length) return;
+  state.parkingSpaces.splice(idx, 1);
+  // Fix undo history
+  state.manualHistory = state.manualHistory.filter(function(h) { return h !== idx; }).map(function(h) { return h > idx ? h - 1 : h; });
+  renumberSpaces();
+  updateManualList();
+  updateStats();
+  render();
+}
+
+function pasteSpace() {
+  var cp = state.copiedSpace;
+  if (!cp) return;
+  // Offset along the width direction (perpendicular to depth) by one car-width
+  var rad = cp.angle * Math.PI / 180;
+  var cosA = Math.cos(rad), sinA = Math.sin(rad);
+  // "Width direction" is the local X axis of the rotated rect
+  var offsetX = cp.w * cosA;
+  var offsetY = cp.w * sinA;
+  var newX = cp.x + offsetX;
+  var newY = cp.y + offsetY;
+  // Snap to grid
+  newX = snapToGrid(newX);
+  newY = snapToGrid(newY);
+  // Check for overlap — if position already occupied, keep shifting
+  var maxTries = 50;
+  for (var t = 0; t < maxTries; t++) {
+    var overlap = false;
+    for (var i = 0; i < state.parkingSpaces.length; i++) {
+      var sp = state.parkingSpaces[i];
+      if (Math.abs(sp.x - newX) < 0.1 && Math.abs(sp.y - newY) < 0.1 && Math.abs(sp.angle - cp.angle) < 1) {
+        overlap = true; break;
+      }
+    }
+    if (!overlap) break;
+    newX = snapToGrid(newX + offsetX);
+    newY = snapToGrid(newY + offsetY);
+  }
+  var newSpace = {
+    x: newX, y: newY,
+    w: cp.w, h: cp.h,
+    angle: cp.angle,
+    type: cp.type,
+    num: 0,
+    manual: true
+  };
+  state.parkingSpaces.push(newSpace);
+  state.manualHistory.push(state.parkingSpaces.length - 1);
+  // Update copiedSpace position so next paste continues in the same direction
+  state.copiedSpace = { w: cp.w, h: cp.h, angle: cp.angle, type: cp.type, x: newX, y: newY };
+  renumberSpaces();
+  updateManualList();
+  updateStats();
+  render();
+}
+
+function removeNearestSpace(wx, wy) {
+  if (state.parkingSpaces.length === 0) return;
+  var bestIdx = -1, bestDist = 2; // must be within 2m
+  for (var i = 0; i < state.parkingSpaces.length; i++) {
+    var sp = state.parkingSpaces[i];
+    var d = Math.sqrt(Math.pow(sp.x - wx, 2) + Math.pow(sp.y - wy, 2));
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  if (bestIdx >= 0) {
+    removeSpaceByIndex(bestIdx);
+  }
+}
+
+function findSpaceAtWorld(wx, wy) {
+  // Check if world point is inside any parking space (rotated rectangle hit test)
+  for (var i = state.parkingSpaces.length - 1; i >= 0; i--) {
+    var sp = state.parkingSpaces[i];
+    var rad = -sp.angle * Math.PI / 180;
+    var cos = Math.cos(rad), sin = Math.sin(rad);
+    // Transform point into space's local coordinates
+    var dx = wx - sp.x, dy = wy - sp.y;
+    var localX = dx * cos - dy * sin;
+    var localY = dx * sin + dy * cos;
+    if (Math.abs(localX) <= sp.w / 2 && Math.abs(localY) <= sp.h / 2) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Get all space indices that belong to the same group as spaceIdx (or just [spaceIdx] if ungrouped)
+function getGroupMembers(spaceIdx) {
+  for (var g = 0; g < state.spaceGroups.length; g++) {
+    if (state.spaceGroups[g].indexOf(spaceIdx) >= 0) {
+      return state.spaceGroups[g].slice(); // return copy
+    }
+  }
+  return [spaceIdx];
+}
+
+// Get centroid of currently selected spaces
+function getSelectionCentroid() {
+  if (state.selectedSpaces.length === 0) return { x: 0, y: 0 };
+  var sx = 0, sy = 0;
+  for (var i = 0; i < state.selectedSpaces.length; i++) {
+    var sp = state.parkingSpaces[state.selectedSpaces[i]];
+    if (sp) { sx += sp.x; sy += sp.y; }
+  }
+  return { x: sx / state.selectedSpaces.length, y: sy / state.selectedSpaces.length };
+}
+
+// Remove selected spaces (and clean up groups/indices)
+function removeSelectedSpaces() {
+  if (state.selectedSpaces.length === 0) return;
+  // Save undo data: store removed spaces with their original indices and group info
+  var undoItems = [];
+  var sorted = state.selectedSpaces.slice().sort(function(a, b) { return b - a; });
+  for (var i = 0; i < sorted.length; i++) {
+    undoItems.push({ index: sorted[i], space: JSON.parse(JSON.stringify(state.parkingSpaces[sorted[i]])) });
+    state.parkingSpaces.splice(sorted[i], 1);
+  }
+  // Save affected groups before updating
+  var affectedGroups = [];
+  for (var ag = 0; ag < state.spaceGroups.length; ag++) {
+    affectedGroups.push(state.spaceGroups[ag].slice());
+  }
+  state.deleteUndoStack.push({ type: 'spaces', items: undoItems, groups: affectedGroups });
+  updateGroupIndicesAfterRemoval(sorted);
+  state.selectedSpaces = [];
+  renumberSpaces();
+  updateManualList();
+  updateStats();
+  render();
+}
+
+// After removing spaces, adjust group indices
+function updateGroupIndicesAfterRemoval(removedSorted) {
+  for (var g = state.spaceGroups.length - 1; g >= 0; g--) {
+    var group = state.spaceGroups[g];
+    // Remove deleted indices
+    for (var r = 0; r < removedSorted.length; r++) {
+      var ri = group.indexOf(removedSorted[r]);
+      if (ri >= 0) group.splice(ri, 1);
+    }
+    // Shift remaining indices down
+    for (var i = 0; i < group.length; i++) {
+      var shift = 0;
+      for (var r2 = 0; r2 < removedSorted.length; r2++) {
+        if (removedSorted[r2] < group[i]) shift++;
+      }
+      group[i] -= shift;
+    }
+    // Remove empty groups
+    if (group.length <= 1) state.spaceGroups.splice(g, 1);
+  }
+}
+
+// Group selected spaces
+function groupSelectedSpaces() {
+  if (state.selectedSpaces.length < 2) return;
+  // Remove any existing groups that overlap with selection
+  var sel = state.selectedSpaces.slice();
+  for (var g = state.spaceGroups.length - 1; g >= 0; g--) {
+    var overlap = false;
+    for (var i = 0; i < sel.length; i++) {
+      if (state.spaceGroups[g].indexOf(sel[i]) >= 0) { overlap = true; break; }
+    }
+    if (overlap) {
+      // Merge group members into selection
+      for (var j = 0; j < state.spaceGroups[g].length; j++) {
+        if (sel.indexOf(state.spaceGroups[g][j]) < 0) sel.push(state.spaceGroups[g][j]);
+      }
+      state.spaceGroups.splice(g, 1);
+    }
+  }
+  state.spaceGroups.push(sel);
+  state.selectedSpaces = sel;
+  render();
+}
+
+// Ungroup selected spaces
+function ungroupSelectedSpaces() {
+  if (state.selectedSpaces.length === 0) return;
+  for (var g = state.spaceGroups.length - 1; g >= 0; g--) {
+    for (var i = 0; i < state.selectedSpaces.length; i++) {
+      if (state.spaceGroups[g].indexOf(state.selectedSpaces[i]) >= 0) {
+        state.spaceGroups.splice(g, 1);
+        break;
+      }
+    }
+  }
+  render();
+}
+
+function renumberSpaces() {
+  for (var j = 0; j < state.parkingSpaces.length; j++) {
+    state.parkingSpaces[j].num = j + 1;
+  }
+}
+
+function updateManualList() {
+  var listEl = document.getElementById('manualPlacedList');
+  var emptyEl = document.getElementById('manualEmpty');
+  var countEl = document.getElementById('manualCount');
+  if (!listEl) return;
+  // Remove old items
+  var items = listEl.querySelectorAll('.manual-placed-item');
+  for (var i = 0; i < items.length; i++) items[i].remove();
+
+  var manualSpaces = [];
+  for (var s = 0; s < state.parkingSpaces.length; s++) {
+    if (state.parkingSpaces[s].manual) manualSpaces.push({ idx: s, space: state.parkingSpaces[s] });
+  }
+
+  if (countEl) countEl.textContent = manualSpaces.length;
+
+  if (manualSpaces.length === 0) {
+    if (emptyEl) emptyEl.style.display = 'block';
+  } else {
+    if (emptyEl) emptyEl.style.display = 'none';
+    for (var m = 0; m < manualSpaces.length; m++) {
+      var ms = manualSpaces[m];
+      var div = document.createElement('div');
+      div.className = 'manual-placed-item';
+      var sizeLabel = ms.space.w.toFixed(1) + '×' + ms.space.h.toFixed(1) + 'm';
+      var typeLabel = VEHICLE_SIZES[ms.space.type] ? VEHICLE_SIZES[ms.space.type].label : '';
+      div.innerHTML = '<span>#' + ms.space.num + ' ' + typeLabel + ' (' + sizeLabel + ')</span>' +
+        '<button class="mp-delete" onclick="removeSpaceByIndex(' + ms.idx + ')" title="削除">✕</button>';
+      listEl.appendChild(div);
+    }
+  }
+}
+
+function drawManualPreview() {
+  if (state.tool !== 'manual') return;
+  // Don't show placement preview when hovering/dragging an existing space
+  if (state.hoveredSpaceIdx >= 0 && state.rotatingSpaceIdx < 0 && state.movingSpaceIdx < 0) return;
+  if (state.rotatingSpaceIdx >= 0 || state.movingSpaceIdx >= 0) return;
+  var size = getManualSpaceSize();
+  var snapped = snapManualPosition(mouseWorld.x, mouseWorld.y);
+  var previewAngle = state._edgeSnapActive ? state._edgeSnapAngle : state.manualAngle;
+  var s = worldToScreen(snapped.x, snapped.y);
+  var sw = size.w * SCALE * state.zoom;
+  var sh = size.h * SCALE * state.zoom;
+  var rad = previewAngle * Math.PI / 180;
+
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(rad);
+
+  // Ghost rectangle
+  ctx.fillStyle = 'rgba(41,128,185,0.25)';
+  ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+  ctx.strokeStyle = '#2980b9';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 3]);
+  ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+  ctx.setLineDash([]);
+
+  // Direction indicator (front of vehicle = top)
+  ctx.beginPath();
+  ctx.moveTo(-sw * 0.2, -sh / 2 + 4);
+  ctx.lineTo(0, -sh / 2 + 1);
+  ctx.lineTo(sw * 0.2, -sh / 2 + 4);
+  ctx.strokeStyle = '#2980b9'; ctx.lineWidth = 2; ctx.stroke();
+
+  ctx.restore();
+
+  // Edge snap indicator
+  if (state._edgeSnapActive) {
+    ctx.fillStyle = 'rgba(39,174,96,0.15)';
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(rad);
+    ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+    ctx.restore();
+    // Green border to indicate edge snap
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(rad);
+    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 2.5;
+    ctx.setLineDash([]);
+    ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+    ctx.restore();
+  }
+
+  // Snap guide lines
+  if (state.parkingSpaces.length > 0) {
+    var cosA = Math.cos(rad), sinA = Math.sin(rad);
+    for (var i = 0; i < state.parkingSpaces.length; i++) {
+      var sp = state.parkingSpaces[i];
+      var angleDiff = Math.abs(((sp.angle - previewAngle) % 360 + 360) % 360);
+      if (angleDiff > 5 && angleDiff < 355) continue;
+      var dx = snapped.x - sp.x, dy = snapped.y - sp.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < Math.max(size.w, size.h) * 3) {
+        // Draw alignment line
+        var ss = worldToScreen(sp.x, sp.y);
+        ctx.beginPath();
+        ctx.setLineDash([2, 4]);
+        ctx.moveTo(ss.x, ss.y); ctx.lineTo(s.x, s.y);
+        ctx.strokeStyle = 'rgba(41,128,185,0.3)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  // Info label
+  var sizeTypeName = VEHICLE_SIZES[state.manualSizeType] ? VEHICLE_SIZES[state.manualSizeType].label : 'カスタム';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.font = '10px sans-serif';
+  ctx.fillText(sizeTypeName + ' ' + size.w + '×' + size.h + 'm  [R]回転  ドラッグ:移動  Shift+ドラッグ:回転', s.x + sw / 2 + 8, s.y - 4);
+}
+
+// ===== Obstacle (障害物) Logic =====
+var OBS_LABELS = { tree: '樹木', pole: '電柱・柱', structure: '構造物', other: 'その他' };
+var OBS_ICONS = { tree: '\u{1F333}', pole: '\u{1F6A7}', structure: '\u{1F3D7}', other: '\u26D4' };
+
+function setObsType(t) {
+  state.obsType = t;
+  document.querySelectorAll('.obs-type-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.querySelector('.obs-type-btn[data-obstype="' + t + '"]').classList.add('active');
+}
+
+function removeObstacle(idx) {
+  var removed = state.obstacles.splice(idx, 1)[0];
+  state.deleteUndoStack.push({ type: 'obstacle', item: JSON.parse(JSON.stringify(removed)), index: idx });
+  updateObsList();
+  render();
+}
+
+function updateObsList() {
+  invalidateAutoPatterns();
+  var listEl = document.getElementById('obsList');
+  var emptyEl = document.getElementById('obsEmpty');
+  var items = listEl.querySelectorAll('.obs-item');
+  for (var i = 0; i < items.length; i++) items[i].remove();
+
+  if (state.obstacles.length === 0) {
+    emptyEl.style.display = 'block';
+  } else {
+    emptyEl.style.display = 'none';
+    for (var o = 0; o < state.obstacles.length; o++) {
+      var obs = state.obstacles[o];
+      var w = Math.abs(obs.x2 - obs.x1).toFixed(1);
+      var h = Math.abs(obs.y2 - obs.y1).toFixed(1);
+      var div = document.createElement('div');
+      div.className = 'obs-item';
+      div.innerHTML = '<div><span class="obs-label">' + OBS_ICONS[obs.type] + ' ' + OBS_LABELS[obs.type] + ' ' + (o + 1) + '</span><br>' +
+        '<span class="obs-info">' + w + 'm x ' + h + 'm / マージン' + obs.margin.toFixed(1) + 'm</span></div>' +
+        '<button class="obs-delete" onclick="removeObstacle(' + o + ')" title="削除">&#10005;</button>';
+      listEl.appendChild(div);
+    }
+  }
+}
+
+function isPointInObstacle(px, py) {
+  for (var o = 0; o < state.obstacles.length; o++) {
+    var obs = state.obstacles[o];
+    var m = obs.margin;
+    var ocx = (obs.x1 + obs.x2) / 2, ocy = (obs.y1 + obs.y2) / 2;
+    var ow = Math.abs(obs.x2 - obs.x1), oh = Math.abs(obs.y2 - obs.y1);
+    var oAngle = obs.angle || 0;
+    var rad = -oAngle * Math.PI / 180;
+    var cos = Math.cos(rad), sin = Math.sin(rad);
+    var dx = px - ocx, dy = py - ocy;
+    var lx = dx * cos - dy * sin;
+    var ly = dx * sin + dy * cos;
+    if (Math.abs(lx) <= ow / 2 + m && Math.abs(ly) <= oh / 2 + m) return true;
+  }
+  return false;
+}
+
+function isSpaceInObstacle(space) {
+  var rad = space.angle * Math.PI / 180;
+  var cosA = Math.cos(rad), sinA = Math.sin(rad);
+  var hw = space.w / 2, hh = space.h / 2;
+  var corners = [
+    { dx: -hw, dy: -hh }, { dx: hw, dy: -hh },
+    { dx: hw, dy: hh }, { dx: -hw, dy: hh },
+    { dx: 0, dy: 0 }
+  ];
+  for (var c = 0; c < corners.length; c++) {
+    var rx = space.x + corners[c].dx * cosA - corners[c].dy * sinA;
+    var ry = space.y + corners[c].dx * sinA + corners[c].dy * cosA;
+    if (isPointInObstacle(rx, ry)) return true;
+  }
+  return false;
+}
+
+// ===== Mouse Events =====
+var mouseWorld = { x: 0, y: 0 };
+
+canvas.addEventListener('mousedown', function(e) {
+  var rect = canvas.getBoundingClientRect();
+  var sx = e.clientX - rect.left;
+  var sy = e.clientY - rect.top;
+  var w = screenToWorld(sx, sy);
+  mouseWorld = w;
+
+  if (e.button === 2) {
+    e.preventDefault();
+    if (state.tool === 'draw' && state.currentPoly && state.currentPoly.points.length >= 3) {
+      state.currentPoly.closed = true;
+      state.polygons.push(state.currentPoly);
+      state.currentPoly = null;
+      document.getElementById('hintBar').classList.add('hidden');
+      render();
+    } else if (state.tool === 'manual') {
+      removeNearestSpace(w.x, w.y);
+    }
+    return;
+  }
+
+  if (state.tool === 'draw') {
+    if (!state.currentPoly) {
+      state.currentPoly = { points: [{ x: w.x, y: w.y }], closed: false };
+    } else {
+      // Close polygon if clicking near the start point (snap threshold: 15 screen px)
+      var startPt = state.currentPoly.points[0];
+      var startScreen = worldToScreen(startPt.x, startPt.y);
+      var clickDist = Math.sqrt(Math.pow(sx - startScreen.x, 2) + Math.pow(sy - startScreen.y, 2));
+      if (state.currentPoly.points.length >= 3 && clickDist < 15) {
+        // Close without adding a duplicate point
+        state.currentPoly.closed = true;
+        state.polygons.push(state.currentPoly);
+        state.currentPoly = null;
+        document.getElementById('hintBar').classList.add('hidden');
+      } else {
+        state.currentPoly.points.push({ x: w.x, y: w.y });
+      }
+    }
+    render();
+  } else if (state.tool === 'rect') {
+    state.rectStart = { x: w.x, y: w.y };
+    state.rectDragging = true;
+  } else if (state.tool === 'calibrate') {
+    if (e.shiftKey && state.bgImageLoaded && !state.bgLocked) {
+      // Shift+drag to move background image
+      state.bgDragging = true;
+      state.bgDragStart = { sx: sx, sy: sy, offX: state.bgOffsetX, offY: state.bgOffsetY };
+    } else {
+      handleCalibrateClick(w.x, w.y);
+    }
+  } else if (state.tool === 'manual') {
+    // Check if delete button was clicked
+    if (state._deleteBtnScreen && state.hoveredSpaceIdx >= 0) {
+      var dbtn = state._deleteBtnScreen;
+      var ddx = sx - dbtn.x, ddy = sy - dbtn.y;
+      if (ddx * ddx + ddy * ddy <= dbtn.r * dbtn.r * 2) {
+        removeSpaceByIndex(state.hoveredSpaceIdx);
+        state.hoveredSpaceIdx = -1;
+        return;
+      }
+    }
+    // If hovering an existing space: Shift+drag = rotate, normal drag = move
+    if (state.hoveredSpaceIdx >= 0) {
+      var hsp = state.parkingSpaces[state.hoveredSpaceIdx];
+      if (e.shiftKey) {
+        // Shift+drag: rotation mode
+        state.rotatingSpaceIdx = state.hoveredSpaceIdx;
+        state.rotateStartAngle = hsp.angle;
+        state.rotateStartMouseAngle = Math.atan2(w.y - hsp.y, w.x - hsp.x) * 180 / Math.PI;
+        canvas.style.cursor = 'grabbing';
+      } else {
+        // Normal drag: move mode
+        state.movingSpaceIdx = state.hoveredSpaceIdx;
+        state.moveOffsetX = hsp.x - w.x;
+        state.moveOffsetY = hsp.y - w.y;
+        canvas.style.cursor = 'move';
+      }
+      return;
+    }
+    placeManualSpace(w.x, w.y);
+  } else if (state.tool === 'gate') {
+    addGate(w.x, w.y);
+  } else if (state.tool === 'obstacle') {
+    state.obsStart = { x: w.x, y: w.y };
+    state.obsDragging = true;
+  } else if (state.tool === 'measure') {
+    // Measure tool: click to place/drag endpoints
+    var nearIdx = findMeasurePointNear(w.x, w.y);
+    if (nearIdx >= 0) {
+      // Start dragging an existing endpoint
+      state.measureDragging = nearIdx;
+    } else if (state.measurePoints.length < 2) {
+      // Place new endpoint
+      state.measurePoints.push({ x: w.x, y: w.y });
+      state.measureDragging = state.measurePoints.length - 1;
+    } else {
+      // Already 2 points: find nearest and start dragging it
+      var d0 = Math.pow(w.x - state.measurePoints[0].x, 2) + Math.pow(w.y - state.measurePoints[0].y, 2);
+      var d1 = Math.pow(w.x - state.measurePoints[1].x, 2) + Math.pow(w.y - state.measurePoints[1].y, 2);
+      state.measureDragging = d0 < d1 ? 0 : 1;
+      state.measurePoints[state.measureDragging] = { x: w.x, y: w.y };
+    }
+    render();
+  } else if (state.tool === 'select') {
+    // Check spaces first, then gates, then obstacles
+    var si = findSpaceAtWorld(w.x, w.y);
+    var gi = findGateAtWorld(w.x, w.y);
+    var oi = findObsAtWorld(w.x, w.y);
+
+    if (si >= 0) {
+      // Clicked on a parking space
+      if (e.shiftKey && state.selectedSpaces.length > 0 && state.selectedSpaces.indexOf(si) >= 0) {
+        // Shift+drag on already-selected: start rotation
+        var rotC = getSelectionCentroid();
+        state.selectRotating = true;
+        state.selectRotateCenter = rotC;
+        state.selectRotateStart = Math.atan2(w.y - rotC.y, w.x - rotC.x);
+        state.selectRotateAngles = [];
+        state.selectRotatePositions = [];
+        for (var sri = 0; sri < state.selectedSpaces.length; sri++) {
+          var srsp = state.parkingSpaces[state.selectedSpaces[sri]];
+          state.selectRotateAngles.push(srsp ? srsp.angle : 0);
+          state.selectRotatePositions.push(srsp ? { x: srsp.x, y: srsp.y } : { x: 0, y: 0 });
+        }
+        canvas.style.cursor = 'grabbing';
+      } else if (e.shiftKey) {
+        // Shift+click: toggle in selection
+        var sidx = state.selectedSpaces.indexOf(si);
+        if (sidx >= 0) { state.selectedSpaces.splice(sidx, 1); }
+        else { state.selectedSpaces.push(si); }
+      } else {
+        // If clicking an already-selected space, keep selection for drag
+        if (state.selectedSpaces.indexOf(si) < 0) {
+          // Expand selection to include group members
+          state.selectedSpaces = getGroupMembers(si);
+        }
+        // Start drag move
+        var centroid = getSelectionCentroid();
+        state.selectDragging = true;
+        state.selectDragOffset = { x: centroid.x - w.x, y: centroid.y - w.y };
+        canvas.style.cursor = 'move';
+      }
+    } else if (gi >= 0) {
+      state.selectedSpaces = [];
+      state.movingGateIdx = gi;
+      state.movingGateOffset = { x: state.gates[gi].x - w.x, y: state.gates[gi].y - w.y };
+      canvas.style.cursor = 'move';
+    } else if (oi >= 0) {
+      state.selectedSpaces = [];
+      var obs = state.obstacles[oi];
+      var ocx = (obs.x1 + obs.x2) / 2, ocy = (obs.y1 + obs.y2) / 2;
+      if (e.shiftKey) {
+        // Shift+drag: rotate obstacle
+        state.rotatingObsIdx = oi;
+        var startAngle = Math.atan2(w.y - ocy, w.x - ocx);
+        state.rotatingObsStart = {
+          cx: ocx, cy: ocy,
+          mouseAngle: startAngle,
+          origAngle: obs.angle || 0,
+          x1: obs.x1, y1: obs.y1, x2: obs.x2, y2: obs.y2
+        };
+        canvas.style.cursor = 'grabbing';
+      } else {
+        state.movingObsIdx = oi;
+        state.movingObsOffset = { x: ocx - w.x, y: ocy - w.y };
+        canvas.style.cursor = 'move';
+      }
+    } else {
+      // Clicked empty area
+      if (e.shiftKey && state.bgImageLoaded && !state.bgLocked) {
+        // Shift+drag on empty area: move background image
+        state.bgDragging = true;
+        state.bgDragStart = { sx: sx, sy: sy, offX: state.bgOffsetX, offY: state.bgOffsetY };
+      } else {
+        if (!e.shiftKey) { state.selectedSpaces = []; }
+        state.dragging = true;
+        state.dragStart = { x: sx, y: sy, panX: state.panX, panY: state.panY };
+      }
+    }
+  }
+});
+
+canvas.addEventListener('mousemove', function(e) {
+  var rect = canvas.getBoundingClientRect();
+  var sx = e.clientX - rect.left;
+  var sy = e.clientY - rect.top;
+  mouseWorld = screenToWorld(sx, sy);
+
+  document.getElementById('canvasInfo').textContent =
+    'X: ' + mouseWorld.x.toFixed(1) + 'm  Y: ' + mouseWorld.y.toFixed(1) + 'm | スケール: 1m = ' + (SCALE * state.zoom).toFixed(0) + 'px';
+
+  if (state.tool === 'select' && state.dragging) {
+    state.panX = state.dragStart.panX + (sx - state.dragStart.x);
+    state.panY = state.dragStart.panY + (sy - state.dragStart.y);
+  }
+  // Move gate by drag
+  if (state.movingGateIdx >= 0 && state.movingGateIdx < state.gates.length) {
+    var mg = state.gates[state.movingGateIdx];
+    var newGx = mouseWorld.x + state.movingGateOffset.x;
+    var newGy = mouseWorld.y + state.movingGateOffset.y;
+    // Update the gate position and recalculate normal
+    var snap = findNearestEdge(newGx, newGy);
+    if (snap && snap.dist < 5) {
+      mg.x = snap.x; mg.y = snap.y;
+      mg.normalX = snap.normalX; mg.normalY = snap.normalY;
+      mg.edgeAngle = snap.edgeAngle;
+      mg.polyIdx = snap.polyIdx; mg.edgeIdx = snap.edgeIdx;
+    } else {
+      mg.x = newGx; mg.y = newGy;
+    }
+  }
+  // Move obstacle by drag
+  if (state.movingObsIdx >= 0 && state.movingObsIdx < state.obstacles.length) {
+    var mo = state.obstacles[state.movingObsIdx];
+    var ow = mo.x2 - mo.x1, oh = mo.y2 - mo.y1;
+    var newCx = mouseWorld.x + state.movingObsOffset.x;
+    var newCy = mouseWorld.y + state.movingObsOffset.y;
+    mo.x1 = newCx - ow / 2; mo.y1 = newCy - oh / 2;
+    mo.x2 = newCx + ow / 2; mo.y2 = newCy + oh / 2;
+  }
+  // Rotate obstacle by Shift+drag
+  if (state.rotatingObsIdx >= 0 && state.rotatingObsStart) {
+    var robs = state.obstacles[state.rotatingObsIdx];
+    var rs = state.rotatingObsStart;
+    var currentAngle = Math.atan2(mouseWorld.y - rs.cy, mouseWorld.x - rs.cx);
+    var deltaAngle = (currentAngle - rs.mouseAngle) * 180 / Math.PI;
+    robs.angle = ((rs.origAngle + deltaAngle) % 360 + 360) % 360;
+  }
+  // Drag selected spaces
+  if (state.selectDragging && state.selectedSpaces.length > 0 && state.selectDragOffset) {
+    var newCx = mouseWorld.x + state.selectDragOffset.x;
+    var newCy = mouseWorld.y + state.selectDragOffset.y;
+    var oldCentroid = getSelectionCentroid();
+    var ddx = snapToGrid(newCx) - oldCentroid.x;
+    var ddy = snapToGrid(newCy) - oldCentroid.y;
+    for (var si2 = 0; si2 < state.selectedSpaces.length; si2++) {
+      var sp2 = state.parkingSpaces[state.selectedSpaces[si2]];
+      if (sp2) { sp2.x += ddx; sp2.y += ddy; }
+    }
+  }
+  // Rotate selected spaces
+  if (state.selectRotating && state.selectRotateCenter) {
+    var currentAngle = Math.atan2(mouseWorld.y - state.selectRotateCenter.y, mouseWorld.x - state.selectRotateCenter.x);
+    var deltaAngle = currentAngle - state.selectRotateStart;
+    var deltaDeg = deltaAngle * 180 / Math.PI;
+    for (var sr = 0; sr < state.selectedSpaces.length; sr++) {
+      var idx = state.selectedSpaces[sr];
+      var sp3 = state.parkingSpaces[idx];
+      if (!sp3) continue;
+      sp3.angle = ((state.selectRotateAngles[sr] + deltaDeg) % 360 + 360) % 360;
+      // Rotate position around center
+      var origPos = state.selectRotatePositions[sr];
+      var odx = origPos.x - state.selectRotateCenter.x;
+      var ody = origPos.y - state.selectRotateCenter.y;
+      var cos3 = Math.cos(deltaAngle), sin3 = Math.sin(deltaAngle);
+      sp3.x = state.selectRotateCenter.x + odx * cos3 - ody * sin3;
+      sp3.y = state.selectRotateCenter.y + odx * sin3 + ody * cos3;
+    }
+  }
+  // Hover detection for gates/obstacles/spaces in select tool
+  if (state.tool === 'select' && state.movingGateIdx < 0 && state.movingObsIdx < 0 && state.rotatingObsIdx < 0 && !state.dragging && !state.selectDragging && !state.selectRotating) {
+    var hsi = findSpaceAtWorld(mouseWorld.x, mouseWorld.y);
+    state.hoveredSpaceIdx = hsi;
+    state.hoveredGateIdx = hsi < 0 ? findGateAtWorld(mouseWorld.x, mouseWorld.y) : -1;
+    state.hoveredObsIdx = (hsi < 0 && state.hoveredGateIdx < 0) ? findObsAtWorld(mouseWorld.x, mouseWorld.y) : -1;
+    if (hsi >= 0 || state.hoveredGateIdx >= 0 || state.hoveredObsIdx >= 0) {
+      canvas.style.cursor = 'grab';
+    } else if (!state.bgDragging) {
+      canvas.style.cursor = 'default';
+    }
+  }
+  if (state.bgDragging && state.bgDragStart) {
+    // Use screen pixel delta converted to world units (avoids feedback loop)
+    var dxWorld = (sx - state.bgDragStart.sx) / (SCALE * state.zoom);
+    var dyWorld = (sy - state.bgDragStart.sy) / (SCALE * state.zoom);
+    state.bgOffsetX = state.bgDragStart.offX + dxWorld;
+    state.bgOffsetY = state.bgDragStart.offY + dyWorld;
+  }
+  // Handle measure tool drag
+  if (state.measureDragging >= 0 && state.measureDragging < state.measurePoints.length) {
+    state.measurePoints[state.measureDragging] = { x: mouseWorld.x, y: mouseWorld.y };
+  }
+  // Handle drag-rotation of parking space
+  if (state.rotatingSpaceIdx >= 0 && state.rotatingSpaceIdx < state.parkingSpaces.length) {
+    var rsp = state.parkingSpaces[state.rotatingSpaceIdx];
+    var currentMouseAngle = Math.atan2(mouseWorld.y - rsp.y, mouseWorld.x - rsp.x) * 180 / Math.PI;
+    var angleDelta = currentMouseAngle - state.rotateStartMouseAngle;
+    var newAngle = ((state.rotateStartAngle + angleDelta) % 360 + 360) % 360;
+    // Snap to 5-degree increments
+    newAngle = Math.round(newAngle / 5) * 5;
+    rsp.angle = newAngle;
+  }
+  // Handle drag-move of parking space
+  if (state.movingSpaceIdx >= 0 && state.movingSpaceIdx < state.parkingSpaces.length) {
+    var msp = state.parkingSpaces[state.movingSpaceIdx];
+    var targetX = mouseWorld.x + state.moveOffsetX;
+    var targetY = mouseWorld.y + state.moveOffsetY;
+    // Snap to grid
+    msp.x = snapToGrid(targetX);
+    msp.y = snapToGrid(targetY);
+  }
+  // Track hovered parking space for manual tool
+  var isDraggingSpace = state.rotatingSpaceIdx >= 0 || state.movingSpaceIdx >= 0;
+  if (state.tool === 'manual' && !isDraggingSpace) {
+    state.hoveredSpaceIdx = findSpaceAtWorld(mouseWorld.x, mouseWorld.y);
+    if (state.hoveredSpaceIdx >= 0) {
+      canvas.style.cursor = 'grab';
+    } else {
+      canvas.style.cursor = 'crosshair';
+    }
+  } else if (state.tool !== 'manual' && state.tool !== 'select') {
+    state.hoveredSpaceIdx = -1;
+  }
+  render();
+});
+
+canvas.addEventListener('mouseup', function(e) {
+  if (state.tool === 'rect' && state.rectDragging && state.rectStart) {
+    var rect = canvas.getBoundingClientRect();
+    var sx = e.clientX - rect.left;
+    var sy = e.clientY - rect.top;
+    var w = screenToWorld(sx, sy);
+    var x1 = Math.min(state.rectStart.x, w.x);
+    var y1 = Math.min(state.rectStart.y, w.y);
+    var x2 = Math.max(state.rectStart.x, w.x);
+    var y2 = Math.max(state.rectStart.y, w.y);
+    if (Math.abs(x2 - x1) > 0.5 && Math.abs(y2 - y1) > 0.5) {
+      state.polygons.push({
+        points: [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }],
+        closed: true
+      });
+      document.getElementById('hintBar').classList.add('hidden');
+    }
+    state.rectStart = null;
+    state.rectDragging = false;
+  }
+  if (state.tool === 'obstacle' && state.obsDragging && state.obsStart) {
+    var rect2 = canvas.getBoundingClientRect();
+    var sx2 = e.clientX - rect2.left;
+    var sy2 = e.clientY - rect2.top;
+    var w2 = screenToWorld(sx2, sy2);
+    var ox1 = Math.min(state.obsStart.x, w2.x);
+    var oy1 = Math.min(state.obsStart.y, w2.y);
+    var ox2 = Math.max(state.obsStart.x, w2.x);
+    var oy2 = Math.max(state.obsStart.y, w2.y);
+    if (Math.abs(ox2 - ox1) > 0.3 && Math.abs(oy2 - oy1) > 0.3) {
+      var margin = parseFloat(document.getElementById('obsMargin').value) || 0.5;
+      state.obstacles.push({
+        x1: ox1, y1: oy1, x2: ox2, y2: oy2,
+        type: state.obsType, margin: margin, angle: 0
+      });
+      updateObsList();
+    }
+    state.obsStart = null;
+    state.obsDragging = false;
+  }
+  // End measure drag
+  if (state.measureDragging >= 0) {
+    state.measureDragging = -1;
+  }
+  // End select drag/rotate
+  if (state.selectDragging) {
+    state.selectDragging = false;
+    state.selectDragOffset = null;
+    canvas.style.cursor = 'default';
+  }
+  if (state.selectRotating) {
+    state.selectRotating = false;
+    state.selectRotateCenter = null;
+    state.selectRotateAngles = [];
+    state.selectRotatePositions = [];
+    canvas.style.cursor = 'default';
+  }
+  // End gate/obstacle drag
+  if (state.movingGateIdx >= 0) {
+    state.movingGateIdx = -1;
+    state.movingGateOffset = null;
+    updateGateList();
+    canvas.style.cursor = state.tool === 'select' ? 'default' : 'crosshair';
+  }
+  if (state.movingObsIdx >= 0) {
+    state.movingObsIdx = -1;
+    state.movingObsOffset = null;
+    updateObsList();
+    canvas.style.cursor = state.tool === 'select' ? 'default' : 'crosshair';
+  }
+  if (state.rotatingObsIdx >= 0) {
+    state.rotatingObsIdx = -1;
+    state.rotatingObsStart = null;
+    updateObsList();
+    canvas.style.cursor = state.tool === 'select' ? 'default' : 'crosshair';
+  }
+  // End drag-rotation or drag-move
+  if (state.rotatingSpaceIdx >= 0) {
+    state.rotatingSpaceIdx = -1;
+    canvas.style.cursor = state.tool === 'manual' ? 'crosshair' : 'default';
+  }
+  if (state.movingSpaceIdx >= 0) {
+    state.movingSpaceIdx = -1;
+    canvas.style.cursor = state.tool === 'manual' ? 'crosshair' : 'default';
+  }
+  state.dragging = false;
+  state.bgDragging = false;
+  state.bgDragStart = null;
+  render();
+});
+
+canvas.addEventListener('dblclick', function() {
+  if (state.tool === 'draw' && state.currentPoly && state.currentPoly.points.length >= 3) {
+    state.currentPoly.closed = true;
+    state.polygons.push(state.currentPoly);
+    state.currentPoly = null;
+    document.getElementById('hintBar').classList.add('hidden');
+    render();
+  }
+});
+
+canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+document.addEventListener('keydown', function(e) {
+  if (state.tool === 'manual') {
+    if (e.key === 'r' || e.key === 'R') {
+      setManualAngleDirect(state.manualAngle + 90);
+    } else if (e.key === 'q' || e.key === 'Q') {
+      setManualAngleDirect(state.manualAngle - 5);
+    } else if (e.key === 'e' || e.key === 'E') {
+      setManualAngleDirect(state.manualAngle + 5);
+    }
+  }
+  // Ctrl+Z undo: deleteUndoStack > manual undo > clear restore
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    if (state.deleteUndoStack.length > 0) {
+      var undo = state.deleteUndoStack.pop();
+      if (undo.type === 'spaces') {
+        // Restore groups first
+        state.spaceGroups = undo.groups;
+        // Re-insert spaces at original indices (ascending order)
+        var items = undo.items.slice().sort(function(a, b) { return a.index - b.index; });
+        for (var ui = 0; ui < items.length; ui++) {
+          state.parkingSpaces.splice(items[ui].index, 0, items[ui].space);
+        }
+        renumberSpaces();
+        updateManualList();
+        updateStats();
+      } else if (undo.type === 'obstacle') {
+        state.obstacles.splice(undo.index, 0, undo.item);
+        updateObsList();
+      } else if (undo.type === 'gate') {
+        state.gates.splice(undo.index, 0, undo.item);
+        updateGateList();
+      }
+      render();
+    } else if (state.manualHistory.length > 0) {
+      undoManualSpace();
+    } else if (state.clearSnapshot) {
+      restoreFromClearSnapshot();
+    }
+  }
+  // Ctrl+C: copy hovered space (manual or select tool)
+  if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+    if (state.tool === 'manual' && state.hoveredSpaceIdx >= 0 && state.hoveredSpaceIdx < state.parkingSpaces.length) {
+      e.preventDefault();
+      var src = state.parkingSpaces[state.hoveredSpaceIdx];
+      state.copiedSpace = { w: src.w, h: src.h, angle: src.angle, type: src.type, x: src.x, y: src.y };
+    } else if (state.tool === 'select' && state.selectedSpaces.length > 0) {
+      e.preventDefault();
+      var cc = getSelectionCentroid();
+      state.copiedSpaces = [];
+      // Map original index to copy index
+      var idxMap = {};
+      for (var ci = 0; ci < state.selectedSpaces.length; ci++) {
+        var csp = state.parkingSpaces[state.selectedSpaces[ci]];
+        if (csp) {
+          idxMap[state.selectedSpaces[ci]] = state.copiedSpaces.length;
+          state.copiedSpaces.push({ w: csp.w, h: csp.h, angle: csp.angle, type: csp.type, dx: csp.x - cc.x, dy: csp.y - cc.y });
+        }
+      }
+      // Copy group relationships (as local indices within copiedSpaces)
+      state.copiedSpaceGroups = [];
+      for (var cgi = 0; cgi < state.spaceGroups.length; cgi++) {
+        var cgrp = state.spaceGroups[cgi];
+        var localGrp = [];
+        for (var cgj = 0; cgj < cgrp.length; cgj++) {
+          if (idxMap[cgrp[cgj]] !== undefined) localGrp.push(idxMap[cgrp[cgj]]);
+        }
+        if (localGrp.length >= 2) state.copiedSpaceGroups.push(localGrp);
+      }
+      state._copiedCentroid = { x: cc.x, y: cc.y };
+    }
+  }
+  // Ctrl+V: paste copied spaces
+  if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+    if (state.tool === 'manual' && state.copiedSpace) {
+      e.preventDefault();
+      pasteSpace();
+    } else if (state.tool === 'select' && state.copiedSpaces && state.copiedSpaces.length > 0) {
+      e.preventDefault();
+      var pasteOff = 2.0;
+      var baseX = state._copiedCentroid ? state._copiedCentroid.x : 0;
+      var baseY = state._copiedCentroid ? state._copiedCentroid.y : 0;
+      var newSel = [];
+      var baseIdx = state.parkingSpaces.length;
+      for (var pi2 = 0; pi2 < state.copiedSpaces.length; pi2++) {
+        var pcs = state.copiedSpaces[pi2];
+        var newIdx = state.parkingSpaces.length;
+        state.parkingSpaces.push({ x: baseX + pcs.dx + pasteOff, y: baseY + pcs.dy + pasteOff, w: pcs.w, h: pcs.h, angle: pcs.angle, type: pcs.type, num: newIdx + 1, manual: true });
+        newSel.push(newIdx);
+      }
+      // Recreate group relationships for pasted spaces
+      if (state.copiedSpaceGroups) {
+        for (var pgi = 0; pgi < state.copiedSpaceGroups.length; pgi++) {
+          var srcGrp = state.copiedSpaceGroups[pgi];
+          var newGrp = [];
+          for (var pgj = 0; pgj < srcGrp.length; pgj++) {
+            newGrp.push(baseIdx + srcGrp[pgj]);
+          }
+          state.spaceGroups.push(newGrp);
+        }
+      }
+      state.selectedSpaces = newSel;
+      // Update centroid for successive pastes
+      state._copiedCentroid = { x: baseX + pasteOff, y: baseY + pasteOff };
+      renumberSpaces();
+      updateManualList();
+      updateStats();
+      render();
+    }
+  }
+  // Ctrl+D: duplicate hovered space (copy + paste in one step)
+  if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+    if (state.tool === 'manual' && state.hoveredSpaceIdx >= 0 && state.hoveredSpaceIdx < state.parkingSpaces.length) {
+      e.preventDefault();
+      var src2 = state.parkingSpaces[state.hoveredSpaceIdx];
+      state.copiedSpace = { w: src2.w, h: src2.h, angle: src2.angle, type: src2.type, x: src2.x, y: src2.y };
+      pasteSpace();
+    }
+  }
+  // R key: rotate selected spaces / hovered gate/obstacle in select tool
+  if ((e.key === 'r' || e.key === 'R') && state.tool === 'select') {
+    if (state.selectedSpaces.length > 0) {
+      e.preventDefault();
+      // Rotate selected spaces 90 degrees around centroid
+      var rc = getSelectionCentroid();
+      var rotRad = Math.PI / 2;
+      for (var rsi = 0; rsi < state.selectedSpaces.length; rsi++) {
+        var rsp = state.parkingSpaces[state.selectedSpaces[rsi]];
+        if (!rsp) continue;
+        rsp.angle = ((rsp.angle + 90) % 360 + 360) % 360;
+        if (state.selectedSpaces.length > 1) {
+          var rdx = rsp.x - rc.x, rdy = rsp.y - rc.y;
+          rsp.x = rc.x + rdx * Math.cos(rotRad) - rdy * Math.sin(rotRad);
+          rsp.y = rc.y + rdx * Math.sin(rotRad) + rdy * Math.cos(rotRad);
+        }
+      }
+      render();
+    } else if (state.hoveredGateIdx >= 0 && state.hoveredGateIdx < state.gates.length) {
+      e.preventDefault();
+      var rg = state.gates[state.hoveredGateIdx];
+      var tmpW = rg.width;
+      rg.width = rg.depth;
+      rg.depth = tmpW;
+      rg.edgeAngle = ((rg.edgeAngle + 90) % 360 + 360) % 360;
+      var oldNx = rg.normalX, oldNy = rg.normalY;
+      rg.normalX = -oldNy;
+      rg.normalY = oldNx;
+      render();
+    } else if (state.hoveredObsIdx >= 0 && state.hoveredObsIdx < state.obstacles.length) {
+      e.preventDefault();
+      var ro = state.obstacles[state.hoveredObsIdx];
+      var rcx = (ro.x1 + ro.x2) / 2, rcy = (ro.y1 + ro.y2) / 2;
+      var rw = Math.abs(ro.x2 - ro.x1), rh = Math.abs(ro.y2 - ro.y1);
+      ro.x1 = rcx - rh / 2; ro.y1 = rcy - rw / 2;
+      ro.x2 = rcx + rh / 2; ro.y2 = rcy + rw / 2;
+      render();
+    }
+  }
+  // Ctrl+G: group selected spaces / Ctrl+Shift+G: ungroup
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'g' || e.key === 'G') && state.tool === 'select') {
+    e.preventDefault();
+    if (e.shiftKey) {
+      ungroupSelectedSpaces();
+    } else {
+      groupSelectedSpaces();
+    }
+  }
+  // Delete/Backspace: remove selected spaces, or measure line, or hovered gate/obstacle
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (state.tool === 'select' && state.selectedSpaces.length > 0) {
+      e.preventDefault();
+      removeSelectedSpaces();
+    } else if (state.tool === 'measure' && state.measurePoints.length > 0) {
+      e.preventDefault();
+      state.measurePoints = [];
+      render();
+    } else if (state.tool === 'select') {
+      if (state.hoveredGateIdx >= 0) {
+        e.preventDefault();
+        removeGate(state.hoveredGateIdx);
+        state.hoveredGateIdx = -1;
+      } else if (state.hoveredObsIdx >= 0) {
+        e.preventDefault();
+        removeObstacle(state.hoveredObsIdx);
+        state.hoveredObsIdx = -1;
+      }
+    }
+  }
+  // Cmd+R / Ctrl+R: prevent reload, save snapshot for safety
+  if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+    e.preventDefault();
+    // Don't do anything destructive — just block the browser reload
+  }
+});
+
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  // Shift+scroll: rotate manual placement angle
+  if (e.shiftKey && state.tool === 'manual') {
+    var angleDelta = e.deltaY > 0 ? 1 : -1;
+    setManualAngleDirect(state.manualAngle + angleDelta);
+    return;
+  }
+  var rect = canvas.getBoundingClientRect();
+  var sx = e.clientX - rect.left;
+  var sy = e.clientY - rect.top;
+  var oldZoom = state.zoom;
+  var delta = e.deltaY > 0 ? 0.9 : 1.1;
+  state.zoom = Math.max(0.1, Math.min(10, state.zoom * delta));
+  state.panX = sx - (sx - state.panX) * (state.zoom / oldZoom);
+  state.panY = sy - (sy - state.panY) * (state.zoom / oldZoom);
+  render();
+}, { passive: false });
+
+// ===== Polygon Geometry =====
+function polygonArea(pts) {
+  var a = 0;
+  for (var i = 0; i < pts.length; i++) {
+    var j = (i + 1) % pts.length;
+    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+function polygonBounds(pts) {
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (var i = 0; i < pts.length; i++) {
+    minX = Math.min(minX, pts[i].x); minY = Math.min(minY, pts[i].y);
+    maxX = Math.max(maxX, pts[i].x); maxY = Math.max(maxY, pts[i].y);
+  }
+  return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+}
+
+function pointInPolygon(px, py, pts) {
+  var inside = false;
+  for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    var xi = pts[i].x, yi = pts[i].y;
+    var xj = pts[j].x, yj = pts[j].y;
+    if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function rectCornersInPolygon(cx, cy, w, h, angleDeg, polyPts) {
+  var rad = angleDeg * Math.PI / 180;
+  var cosA = Math.cos(rad), sinA = Math.sin(rad);
+  var corners = [
+    { dx: -w/2, dy: -h/2 }, { dx: w/2, dy: -h/2 },
+    { dx: w/2, dy: h/2 }, { dx: -w/2, dy: h/2 }
+  ];
+  for (var i = 0; i < corners.length; i++) {
+    var c = corners[i];
+    var rx = cx + c.dx * cosA - c.dy * sinA;
+    var ry = cy + c.dx * sinA + c.dy * cosA;
+    if (!pointInPolygon(rx, ry, polyPts)) return false;
+  }
+  return true;
+}
+
+// ===== Auto Layout (Edge-aligned) =====
+function cycleAutoLayout() {
+  if (state.polygons.length === 0) { alert('先に敷地の輪郭を描いてください。'); return; }
+
+  // If no patterns generated yet, generate all patterns
+  if (state.autoPatterns.length === 0) {
+    generateAllPatterns();
+    if (state.autoPatterns.length === 0) { alert('配置パターンを生成できませんでした。'); return; }
+  }
+
+  // Save snapshot on first click only
+  if (state.autoPatternIdx < 0) {
+    state.clearSnapshot = {
+      polygons: JSON.parse(JSON.stringify(state.polygons)),
+      currentPoly: state.currentPoly ? JSON.parse(JSON.stringify(state.currentPoly)) : null,
+      parkingSpaces: JSON.parse(JSON.stringify(state.parkingSpaces)),
+      gates: JSON.parse(JSON.stringify(state.gates)),
+      obstacles: JSON.parse(JSON.stringify(state.obstacles)),
+      calibrated: state.calibrated,
+      calibEdge: state.calibEdge ? JSON.parse(JSON.stringify(state.calibEdge)) : null,
+      manualHistory: state.manualHistory.slice(),
+    };
+  }
+
+  // Cycle to next pattern
+  state.autoPatternIdx = (state.autoPatternIdx + 1) % state.autoPatterns.length;
+  applyAutoPattern(state.autoPatternIdx);
+}
+
+function generateAllPatterns() {
+  var spaceW = parseFloat(document.getElementById('spaceWidth').value);
+  var spaceD = parseFloat(document.getElementById('spaceDepth').value);
+  var aisleW = parseFloat(document.getElementById('aisleWidth').value);
+  var zones = getGateExclusionZones();
+  var manualSpaces = state.parkingSpaces.filter(function(sp) { return sp.manual; });
+
+  state.autoPatterns = [];
+  state.autoPatternIdx = -1;
+
+  // Collect all polygon angles for variety
+  var allAngles = [];
+  for (var pi = 0; pi < state.polygons.length; pi++) {
+    var pts = state.polygons[pi].points;
+    if (!state.polygons[pi].closed || pts.length < 3) continue;
+    var bestLen2 = 0, bestAngle2 = 0;
+    for (var ei = 0; ei < pts.length; ei++) {
+      var ej = (ei + 1) % pts.length;
+      var dx = pts[ej].x - pts[ei].x, dy = pts[ej].y - pts[ei].y;
+      var len = Math.sqrt(dx * dx + dy * dy);
+      if (len > bestLen2) { bestLen2 = len; bestAngle2 = Math.atan2(dy, dx); }
+    }
+    if (allAngles.indexOf(bestAngle2) < 0) allAngles.push(bestAngle2);
+    var perpAngle = bestAngle2 + Math.PI / 2;
+    if (allAngles.indexOf(perpAngle) < 0) allAngles.push(perpAngle);
+  }
+
+  // Pattern 1: Edge + Interior (longest edge angle) — maximize
+  tryBuildPattern(manualSpaces, spaceW, spaceD, aisleW, zones, true, true, allAngles[0] || 0, '辺沿い＋田の字（主軸）');
+
+  // Pattern 2: Edge + Interior (perpendicular angle)
+  if (allAngles.length > 1) {
+    tryBuildPattern(manualSpaces, spaceW, spaceD, aisleW, zones, true, true, allAngles[1], '辺沿い＋田の字（直交軸）');
+  }
+
+  // Pattern 3: Edge only (no interior fill)
+  tryBuildPattern(manualSpaces, spaceW, spaceD, aisleW, zones, true, false, 0, '辺沿いのみ');
+
+  // Pattern 4: Interior only (no edge placement)
+  tryBuildPattern(manualSpaces, spaceW, spaceD, aisleW, zones, false, true, allAngles[0] || 0, '田の字のみ（主軸）');
+
+  // Pattern 5: Wide aisle (aisleW + 1m)
+  tryBuildPattern(manualSpaces, spaceW, spaceD, aisleW + 1.0, zones, true, true, allAngles[0] || 0, '広め通路（' + (aisleW + 1.0).toFixed(1) + 'm）');
+
+  // Pattern 6: Narrow aisle (aisleW - 0.5m, min 3m)
+  var narrowAisle = Math.max(3.0, aisleW - 0.5);
+  if (narrowAisle !== aisleW) {
+    tryBuildPattern(manualSpaces, spaceW, spaceD, narrowAisle, zones, true, true, allAngles[0] || 0, '狭め通路（' + narrowAisle.toFixed(1) + 'm）');
+  }
+
+  // Sort by count descending
+  state.autoPatterns.sort(function(a, b) { return b.count - a.count; });
+}
+
+function tryBuildPattern(manualSpaces, spaceW, spaceD, aisleW, zones, doEdges, doInterior, interiorAngle, label) {
+  // Temporarily replace parkingSpaces to generate pattern
+  var savedSpaces = state.parkingSpaces;
+  state.parkingSpaces = manualSpaces.map(function(sp) { return JSON.parse(JSON.stringify(sp)); });
+
+  for (var pi = 0; pi < state.polygons.length; pi++) {
+    var poly = state.polygons[pi];
+    if (!poly.closed || poly.points.length < 3) continue;
+    if (doEdges) placeSpacesAlongEdges(poly, spaceW, spaceD, zones);
+    if (doInterior) fillInteriorAtAngle(poly, spaceW, spaceD, aisleW, zones, interiorAngle);
+  }
+
+  var autoSpaces = state.parkingSpaces.filter(function(sp) { return !sp.manual; });
+  var totalCount = state.parkingSpaces.length;
+
+  // Only add if we got some auto spaces and this count is unique
+  if (autoSpaces.length > 0) {
+    var isDuplicate = false;
+    for (var di = 0; di < state.autoPatterns.length; di++) {
+      if (state.autoPatterns[di].count === totalCount) { isDuplicate = true; break; }
+    }
+    if (!isDuplicate) {
+      state.autoPatterns.push({
+        spaces: JSON.parse(JSON.stringify(state.parkingSpaces)),
+        label: label,
+        count: totalCount,
+        autoCount: autoSpaces.length
+      });
+    }
+  }
+
+  // Restore original parkingSpaces
+  state.parkingSpaces = savedSpaces;
+}
+
+function applyAutoPattern(idx) {
+  var pattern = state.autoPatterns[idx];
+  state.parkingSpaces = JSON.parse(JSON.stringify(pattern.spaces));
+  state.manualHistory = [];
+  state.selectedSpaces = [];
+  renumberSpaces();
+  updateManualList();
+  updateStats();
+
+  // Update button label with pattern info
+  var btn = document.getElementById('autoLayoutBtn');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> ' +
+    'パターン' + (idx + 1) + '/' + state.autoPatterns.length + ' (' + pattern.count + '台)';
+
+  render();
+}
+
+function drawAutoPatternLabel() {
+  if (state.autoPatternIdx < 0 || state.autoPatterns.length === 0) return;
+  var pat = state.autoPatterns[state.autoPatternIdx];
+  var text = 'パターン ' + (state.autoPatternIdx + 1) + '/' + state.autoPatterns.length + ': ' + pat.label + ' (' + pat.count + '台)';
+  var nextText = 'クリックで次のパターン →';
+
+  ctx.save();
+  // Background
+  var w = ctx.measureText(text).width + 40;
+  var bx = (canvas.width - w) / 2;
+  ctx.fillStyle = 'rgba(26,82,118,0.9)';
+  ctx.fillRect(bx, 8, w, 48);
+
+  // Text
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, canvas.width / 2, 30);
+  ctx.font = '11px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillText(nextText, canvas.width / 2, 46);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+function invalidateAutoPatterns() {
+  state.autoPatterns = [];
+  state.autoPatternIdx = -1;
+  var btn = document.getElementById('autoLayoutBtn');
+  if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> 自動配置';
+}
+
+// Legacy wrapper
+function generateEdgeLayout() {
+  cycleAutoLayout();
+}
+
+function placeSpacesAlongEdges(poly, spaceW, spaceD, zones) {
+  var pts = poly.points;
+  for (var ei = 0; ei < pts.length; ei++) {
+    var ej = (ei + 1) % pts.length;
+    var p1 = pts[ei], p2 = pts[ej];
+    var edx = p2.x - p1.x, edy = p2.y - p1.y;
+    var edgeLen = Math.sqrt(edx * edx + edy * edy);
+    if (edgeLen < spaceW) continue;
+
+    var ux = edx / edgeLen, uy = edy / edgeLen;
+    var nx = -uy, ny = ux;
+    var testX = (p1.x + p2.x) / 2 + nx * 0.5;
+    var testY = (p1.y + p2.y) / 2 + ny * 0.5;
+    if (!pointInPolygon(testX, testY, pts)) { nx = -nx; ny = -ny; }
+
+    var edgeAngle = Math.atan2(edy, edx) * 180 / Math.PI;
+    var numSpaces = Math.floor(edgeLen / spaceW);
+    var startOffset = (edgeLen - numSpaces * spaceW) / 2;
+
+    for (var s = 0; s < numSpaces; s++) {
+      var along = startOffset + s * spaceW + spaceW / 2;
+      var cx = p1.x + ux * along + nx * (spaceD / 2);
+      var cy = p1.y + uy * along + ny * (spaceD / 2);
+      tryPlaceSpace(cx, cy, spaceW, spaceD, edgeAngle, pts, zones);
+    }
+  }
+}
+
+function tryPlaceSpace(cx, cy, spaceW, spaceD, angle, polyPts, zones) {
+  var newSpace = {
+    x: cx, y: cy, w: spaceW, h: spaceD,
+    angle: angle, type: state.vehicleType, num: 0, manual: false
+  };
+  if (!rectCornersInPolygon(cx, cy, spaceW, spaceD, angle, polyPts)) return false;
+  if (zones.length > 0 && isSpaceInExclusionZone(newSpace, zones)) return false;
+  if (state.obstacles.length > 0 && isSpaceInObstacle(newSpace)) return false;
+  if (spacesOverlap(newSpace)) return false;
+  state.parkingSpaces.push(newSpace);
+  return true;
+}
+
+function fillInterior(poly, spaceW, spaceD, aisleW, zones) {
+  // 田の字 pattern: two back-to-back rows of depth, then an aisle, repeating.
+  // Try multiple angles — pick the best principal axis from the polygon's longest edge.
+  var pts = poly.points;
+  var bounds = polygonBounds(pts);
+
+  // Find the principal angle: use the longest polygon edge
+  var bestLen = 0, bestAngle = 0;
+  for (var ei = 0; ei < pts.length; ei++) {
+    var ej = (ei + 1) % pts.length;
+    var dx = pts[ej].x - pts[ei].x, dy = pts[ej].y - pts[ei].y;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    if (len > bestLen) { bestLen = len; bestAngle = Math.atan2(dy, dx); }
+  }
+
+  // Also try perpendicular, pick whichever fits more spaces
+  var angles = [bestAngle, bestAngle + Math.PI / 2];
+  var bestCount = -1;
+  var savedSpacesLen = state.parkingSpaces.length;
+
+  for (var ai = 0; ai < angles.length; ai++) {
+    // Save current count
+    var beforeCount = state.parkingSpaces.length;
+    fillInteriorAtAngle(poly, spaceW, spaceD, aisleW, zones, angles[ai]);
+    var placed = state.parkingSpaces.length - beforeCount;
+
+    if (ai === 0) {
+      bestCount = placed;
+      // Keep these, try next angle by removing then comparing
+      if (angles.length > 1) {
+        // Save first attempt
+        var firstAttempt = state.parkingSpaces.slice(savedSpacesLen);
+        state.parkingSpaces.length = savedSpacesLen;
+        // Try second angle
+        fillInteriorAtAngle(poly, spaceW, spaceD, aisleW, zones, angles[1]);
+        var secondCount = state.parkingSpaces.length - savedSpacesLen;
+        if (secondCount > bestCount) {
+          // Keep second attempt
+          break;
+        } else {
+          // Revert to first attempt
+          state.parkingSpaces.length = savedSpacesLen;
+          for (var fi = 0; fi < firstAttempt.length; fi++) {
+            state.parkingSpaces.push(firstAttempt[fi]);
+          }
+          break;
+        }
+      }
+    }
+  }
+}
+
+function fillInteriorAtAngle(poly, spaceW, spaceD, aisleW, zones, angleRad) {
+  var pts = poly.points;
+  var bounds = polygonBounds(pts);
+  var angleDeg = angleRad * 180 / Math.PI;
+
+  // Local coordinate system: "along" = angleRad, "across" = angleRad + PI/2
+  var cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+  var cosP = Math.cos(angleRad + Math.PI / 2), sinP = Math.sin(angleRad + Math.PI / 2);
+
+  // Find bounding box in local coords
+  var diagLen = Math.sqrt(Math.pow(bounds.maxX - bounds.minX, 2) + Math.pow(bounds.maxY - bounds.minY, 2));
+  var cx = (bounds.minX + bounds.maxX) / 2;
+  var cy = (bounds.minY + bounds.maxY) / 2;
+
+  // 田の字: [row of cars facing up] [row of cars facing down] [aisle] repeat
+  // One unit = spaceD + spaceD + aisleW (two opposing rows + one aisle)
+  var unitHeight = spaceD * 2 + aisleW;
+  var halfDiag = diagLen / 2 + 1;
+
+  // Number of units to try
+  var numUnits = Math.ceil(diagLen / unitHeight) + 1;
+
+  for (var u = -numUnits; u <= numUnits; u++) {
+    // "across" position of unit center
+    var acrossCenter = u * unitHeight;
+
+    // Two rows per unit: one at acrossCenter - aisleW/2 - spaceD/2, one at acrossCenter + aisleW/2 + spaceD/2
+    var row1Across = acrossCenter - aisleW / 2 - spaceD / 2;
+    var row2Across = acrossCenter + aisleW / 2 + spaceD / 2;
+
+    var numAlong = Math.ceil(diagLen / spaceW) + 1;
+
+    for (var a = -numAlong; a <= numAlong; a++) {
+      var alongPos = a * spaceW + spaceW / 2;
+
+      // Row 1: cars depth facing toward center (angle = angleDeg + 90)
+      var wx1 = cx + cosA * alongPos + cosP * row1Across;
+      var wy1 = cy + sinA * alongPos + sinP * row1Across;
+      tryPlaceSpace(wx1, wy1, spaceW, spaceD, angleDeg, pts, zones);
+
+      // Row 2: cars depth facing toward center (angle = angleDeg - 90, i.e. + 180 from row1)
+      var wx2 = cx + cosA * alongPos + cosP * row2Across;
+      var wy2 = cy + sinA * alongPos + sinP * row2Across;
+      tryPlaceSpace(wx2, wy2, spaceW, spaceD, angleDeg + 180, pts, zones);
+    }
+  }
+}
+
+function spacesOverlap(newSp) {
+  var rad1 = newSp.angle * Math.PI / 180;
+  var cos1 = Math.cos(rad1), sin1 = Math.sin(rad1);
+  var hw1 = newSp.w / 2, hh1 = newSp.h / 2;
+  // Get corners of new space
+  var corners1 = [
+    { x: newSp.x + (-hw1)*cos1 - (-hh1)*sin1, y: newSp.y + (-hw1)*sin1 + (-hh1)*cos1 },
+    { x: newSp.x + ( hw1)*cos1 - (-hh1)*sin1, y: newSp.y + ( hw1)*sin1 + (-hh1)*cos1 },
+    { x: newSp.x + ( hw1)*cos1 - ( hh1)*sin1, y: newSp.y + ( hw1)*sin1 + ( hh1)*cos1 },
+    { x: newSp.x + (-hw1)*cos1 - ( hh1)*sin1, y: newSp.y + (-hw1)*sin1 + ( hh1)*cos1 }
+  ];
+
+  for (var i = 0; i < state.parkingSpaces.length; i++) {
+    var sp = state.parkingSpaces[i];
+    // Quick distance check
+    var dx = sp.x - newSp.x, dy = sp.y - newSp.y;
+    var maxDim = Math.max(sp.w, sp.h, newSp.w, newSp.h);
+    if (dx * dx + dy * dy > maxDim * maxDim * 4) continue;
+
+    // Check if any corner of new space is inside existing space
+    var rad2 = -sp.angle * Math.PI / 180;
+    var cos2 = Math.cos(rad2), sin2 = Math.sin(rad2);
+    var hw2 = sp.w / 2, hh2 = sp.h / 2;
+    for (var c = 0; c < corners1.length; c++) {
+      var lx = (corners1[c].x - sp.x) * cos2 - (corners1[c].y - sp.y) * sin2;
+      var ly = (corners1[c].x - sp.x) * sin2 + (corners1[c].y - sp.y) * cos2;
+      if (Math.abs(lx) < hw2 - 0.05 && Math.abs(ly) < hh2 - 0.05) return true;
+    }
+    // Also check center
+    var clx = (newSp.x - sp.x) * cos2 - (newSp.y - sp.y) * sin2;
+    var cly = (newSp.x - sp.x) * sin2 + (newSp.y - sp.y) * cos2;
+    if (Math.abs(clx) < hw2 - 0.05 && Math.abs(cly) < hh2 - 0.05) return true;
+  }
+  return false;
+}
+
+// ===== Measure Tool =====
+function drawMeasure() {
+  if (state.measurePoints.length === 0) return;
+  // Always show measure if points exist, regardless of current tool
+  var pts = state.measurePoints;
+  var pixPerMeter = SCALE * state.zoom;
+
+  if (pts.length >= 1) {
+    // Draw point 1
+    var s1 = worldToScreen(pts[0].x, pts[0].y);
+    ctx.beginPath();
+    ctx.arc(s1.x, s1.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(22,160,133,0.5)';
+    ctx.fill();
+    ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  if (pts.length >= 2) {
+    var s2 = worldToScreen(pts[1].x, pts[1].y);
+
+    // Draw line
+    ctx.beginPath();
+    ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y);
+    ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
+
+    // Draw point 2
+    ctx.beginPath();
+    ctx.arc(s2.x, s2.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(22,160,133,0.5)';
+    ctx.fill();
+    ctx.strokeStyle = '#16a085'; ctx.lineWidth = 2; ctx.stroke();
+
+    // Distance label
+    var dist = Math.sqrt(Math.pow(pts[1].x - pts[0].x, 2) + Math.pow(pts[1].y - pts[0].y, 2));
+    var mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
+    var dx = s2.x - s1.x, dy = s2.y - s1.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / len * 18, ny = dx / len * 18;
+
+    // Background pill
+    var label = dist.toFixed(2) + 'm';
+    ctx.font = 'bold 13px sans-serif';
+    var tw = ctx.measureText(label).width;
+    var rx = mx + nx - tw / 2 - 8, ry = my + ny - 12, rw = tw + 16, rh = 24, rr = 6;
+    ctx.fillStyle = 'rgba(22,160,133,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(rx + rr, ry); ctx.lineTo(rx + rw - rr, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + rr, rr);
+    ctx.lineTo(rx + rw, ry + rh - rr);
+    ctx.arcTo(rx + rw, ry + rh, rx + rw - rr, ry + rh, rr);
+    ctx.lineTo(rx + rr, ry + rh);
+    ctx.arcTo(rx, ry + rh, rx, ry + rh - rr, rr);
+    ctx.lineTo(rx, ry + rr);
+    ctx.arcTo(rx, ry, rx + rr, ry, rr);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, mx + nx, my + ny);
+    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+    // Also show dx and dy
+    var ddx = Math.abs(pts[1].x - pts[0].x).toFixed(2);
+    var ddy = Math.abs(pts[1].y - pts[0].y).toFixed(2);
+    ctx.fillStyle = 'rgba(22,160,133,0.75)'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('dx:' + ddx + 'm  dy:' + ddy + 'm', mx + nx, my + ny + 16);
+    ctx.textAlign = 'start';
+
+    // Drag hint
+    if (state.tool === 'measure') {
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.font = '10px sans-serif';
+      ctx.fillText('ドラッグで端点を移動 / Deleteで削除', s1.x, s1.y + 16);
+    }
+  }
+}
+
+function findMeasurePointNear(wx, wy) {
+  var threshold = 0.8; // world meters
+  for (var i = 0; i < state.measurePoints.length; i++) {
+    var dx = state.measurePoints[i].x - wx;
+    var dy = state.measurePoints[i].y - wy;
+    if (dx * dx + dy * dy < threshold * threshold) return i;
+  }
+  return -1;
+}
+
+// ===== Stats =====
+function countByType() {
+  var counts = {};
+  var areaSum = 0;
+  for (var i = 0; i < state.parkingSpaces.length; i++) {
+    var sp = state.parkingSpaces[i];
+    var t = sp.type || 'standard';
+    if (!counts[t]) counts[t] = 0;
+    counts[t]++;
+    areaSum += sp.w * sp.h;
+  }
+  return { counts: counts, spaceArea: areaSum };
+}
+
+function updateStats() {
+  var totalArea = 0;
+  for (var i = 0; i < state.polygons.length; i++) {
+    if (state.polygons[i].closed) totalArea += polygonArea(state.polygons[i].points);
+  }
+  var info = countByType();
+  var spaceArea = info.spaceArea;
+  var aisleArea = totalArea - spaceArea;
+  var efficiency = totalArea > 0 ? (spaceArea / totalArea * 100) : 0;
+
+  document.getElementById('statSpaces').textContent = state.parkingSpaces.length;
+  document.getElementById('statArea').textContent = totalArea.toFixed(0);
+  document.getElementById('statEfficiency').textContent = efficiency.toFixed(0) + '%';
+  document.getElementById('statAisle').textContent = Math.max(0, aisleArea).toFixed(0);
+
+  // Vehicle type breakdown
+  var el = document.getElementById('statByType');
+  if (el) {
+    var counts = info.counts;
+    var keys = Object.keys(counts);
+    if (keys.length <= 1 && state.parkingSpaces.length > 0) {
+      // Only one type — show simple
+      var lbl = VEHICLE_SIZES[keys[0]] ? VEHICLE_SIZES[keys[0]].label : keys[0];
+      el.innerHTML = '<span style="color:#1a5276;font-weight:600;">' + lbl + '</span>: ' + counts[keys[0]] + ' 台';
+    } else if (keys.length > 1) {
+      var html = '<div style="font-weight:700;color:#1a5276;margin-bottom:4px;">車種別内訳</div>';
+      for (var k = 0; k < keys.length; k++) {
+        var key = keys[k];
+        var sz = VEHICLE_SIZES[key];
+        var label = sz ? sz.label : key;
+        var dim = sz ? '(' + sz.w + 'x' + sz.d + ')' : '';
+        html += '<div style="display:flex;justify-content:space-between;">'
+          + '<span>' + label + ' <small style="color:#999">' + dim + '</small></span>'
+          + '<span style="font-weight:700;color:#1a5276;">' + counts[key] + ' 台</span></div>';
+      }
+      el.innerHTML = html;
+    } else {
+      el.innerHTML = '';
+    }
+  }
+}
+
+// ===== Rendering =====
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#e8ecf0';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawBgImage();
+  if (document.getElementById('showGrid').checked) drawGrid();
+
+  for (var i = 0; i < state.polygons.length; i++) {
+    drawPolygon(state.polygons[i], '#546e7a', '#cfd8dc');
+  }
+
+  if (state.currentPoly && state.currentPoly.points.length > 0) {
+    drawPolygon(state.currentPoly, '#2196f3', 'rgba(33,150,243,0.15)');
+    var lastPt = state.currentPoly.points[state.currentPoly.points.length - 1];
+    var sp = worldToScreen(lastPt.x, lastPt.y);
+    var mp = worldToScreen(mouseWorld.x, mouseWorld.y);
+    ctx.beginPath();
+    ctx.setLineDash([5, 5]);
+    ctx.moveTo(sp.x, sp.y); ctx.lineTo(mp.x, mp.y);
+    ctx.strokeStyle = '#2196f3'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Highlight start point when mouse is close enough to snap-close
+    if (state.currentPoly.points.length >= 3) {
+      var startPt = state.currentPoly.points[0];
+      var startSc = worldToScreen(startPt.x, startPt.y);
+      var mouseSc = worldToScreen(mouseWorld.x, mouseWorld.y);
+      var dToStart = Math.sqrt(Math.pow(mouseSc.x - startSc.x, 2) + Math.pow(mouseSc.y - startSc.y, 2));
+      if (dToStart < 30) {
+        // Outer glow ring
+        var glowRadius = 14 + (1 - dToStart / 30) * 8;
+        ctx.beginPath(); ctx.arc(startSc.x, startSc.y, glowRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(33,150,243,' + (0.15 + 0.2 * (1 - dToStart / 30)) + ')';
+        ctx.fill();
+        // Solid ring
+        ctx.beginPath(); ctx.arc(startSc.x, startSc.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = dToStart < 15 ? '#4caf50' : '#2196f3';
+        ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        // "Click to close" hint
+        if (dToStart < 15) {
+          ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('クリックで閉じる', startSc.x, startSc.y - 18);
+          ctx.textAlign = 'left';
+        }
+      }
+    }
+  }
+
+  if (state.tool === 'rect' && state.rectDragging && state.rectStart) {
+    var s1 = worldToScreen(state.rectStart.x, state.rectStart.y);
+    var s2 = worldToScreen(mouseWorld.x, mouseWorld.y);
+    ctx.fillStyle = 'rgba(33,150,243,0.15)';
+    ctx.strokeStyle = '#2196f3'; ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.fillRect(Math.min(s1.x, s2.x), Math.min(s1.y, s2.y), Math.abs(s2.x - s1.x), Math.abs(s2.y - s1.y));
+    ctx.strokeRect(Math.min(s1.x, s2.x), Math.min(s1.y, s2.y), Math.abs(s2.x - s1.x), Math.abs(s2.y - s1.y));
+    ctx.setLineDash([]);
+    var wm = Math.abs(mouseWorld.x - state.rectStart.x);
+    var hm = Math.abs(mouseWorld.y - state.rectStart.y);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.font = '11px sans-serif';
+    ctx.fillText(wm.toFixed(1) + 'm x ' + hm.toFixed(1) + 'm', Math.min(s1.x, s2.x) + 4, Math.min(s1.y, s2.y) - 4);
+  }
+
+  // Gate preview (snap highlight when in gate tool)
+  if (state.tool === 'gate' && state.polygons.length > 0) {
+    var snap = findNearestEdge(mouseWorld.x, mouseWorld.y);
+    if (snap && snap.dist < 5) {
+      drawGatePreview(snap);
+    }
+  }
+
+  // Obstacle preview (when dragging)
+  if (state.tool === 'obstacle' && state.obsDragging && state.obsStart) {
+    var os1 = worldToScreen(state.obsStart.x, state.obsStart.y);
+    var os2 = worldToScreen(mouseWorld.x, mouseWorld.y);
+    ctx.fillStyle = 'rgba(142,68,173,0.15)';
+    ctx.strokeStyle = '#8e44ad'; ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.fillRect(Math.min(os1.x, os2.x), Math.min(os1.y, os2.y), Math.abs(os2.x - os1.x), Math.abs(os2.y - os1.y));
+    ctx.strokeRect(Math.min(os1.x, os2.x), Math.min(os1.y, os2.y), Math.abs(os2.x - os1.x), Math.abs(os2.y - os1.y));
+    ctx.setLineDash([]);
+    var owm = Math.abs(mouseWorld.x - state.obsStart.x);
+    var ohm = Math.abs(mouseWorld.y - state.obsStart.y);
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.font = '11px sans-serif';
+    ctx.fillText(owm.toFixed(1) + 'm x ' + ohm.toFixed(1) + 'm', Math.min(os1.x, os2.x) + 4, Math.min(os1.y, os2.y) - 4);
+  }
+
+  drawObstacles();
+  drawParkingSpaces();
+  drawGates();
+  drawEdgeHighlight();
+  drawManualPreview();
+  drawMeasure();
+  drawScaleBar();
+  drawAutoPatternLabel();
+}
+
+function drawScaleBar() {
+  if (!state.calibrated) return;
+  // Draw a scale bar in the bottom-right corner
+  var barMeters = 10; // default 10m scale bar
+  var pixPerMeter = SCALE * state.zoom;
+  // Choose a nice bar length: 5m, 10m, 20m, 50m based on what fits
+  var candidates = [1, 2, 5, 10, 20, 50, 100];
+  for (var i = 0; i < candidates.length; i++) {
+    if (candidates[i] * pixPerMeter >= 50 && candidates[i] * pixPerMeter <= 250) {
+      barMeters = candidates[i]; break;
+    }
+  }
+  var barPx = barMeters * pixPerMeter;
+  var barX = canvas.width - barPx - 20;
+  var barY = canvas.height - 30;
+  var barH = 8;
+
+  ctx.save();
+  // Background
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillRect(barX - 8, barY - 18, barPx + 16, barH + 30);
+  // Bar
+  ctx.fillStyle = '#333';
+  ctx.fillRect(barX, barY, barPx, barH);
+  // End caps
+  ctx.fillRect(barX, barY - 4, 2, barH + 8);
+  ctx.fillRect(barX + barPx - 2, barY - 4, 2, barH + 8);
+  // Label
+  ctx.fillStyle = '#333'; ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(barMeters + 'm', barX + barPx / 2, barY + barH + 14);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+function drawObstacles() {
+  for (var o = 0; o < state.obstacles.length; o++) {
+    var obs = state.obstacles[o];
+    var m = obs.margin;
+    var ocx = (obs.x1 + obs.x2) / 2, ocy = (obs.y1 + obs.y2) / 2;
+    var ow = Math.abs(obs.x2 - obs.x1), oh = Math.abs(obs.y2 - obs.y1);
+    var oAngle = obs.angle || 0;
+    var oRad = oAngle * Math.PI / 180;
+    var sc = worldToScreen(ocx, ocy);
+    var sw = ow * SCALE * state.zoom, sh = oh * SCALE * state.zoom;
+
+    ctx.save();
+    ctx.translate(sc.x, sc.y);
+    ctx.rotate(oRad);
+
+    // Margin area (lighter)
+    if (m > 0) {
+      var mw = (ow + m * 2) * SCALE * state.zoom;
+      var mh = (oh + m * 2) * SCALE * state.zoom;
+      ctx.fillStyle = 'rgba(142,68,173,0.06)';
+      ctx.strokeStyle = 'rgba(142,68,173,0.3)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.fillRect(-mw / 2, -mh / 2, mw, mh);
+      ctx.strokeRect(-mw / 2, -mh / 2, mw, mh);
+      ctx.setLineDash([]);
+    }
+
+    // Obstacle body
+    ctx.fillStyle = 'rgba(142,68,173,0.2)';
+    ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+
+    // Hatch pattern
+    ctx.strokeStyle = 'rgba(142,68,173,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    var step = 8;
+    for (var h = -sw / 2 - sh; h < sw / 2 + sh; h += step) {
+      ctx.moveTo(h, -sh / 2);
+      ctx.lineTo(h + sh, sh / 2);
+    }
+    ctx.stroke();
+
+    // Border
+    ctx.strokeStyle = '#8e44ad'; ctx.lineWidth = 2;
+    ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+
+    // Icon and label
+    var icon = OBS_ICONS[obs.type] || '\u26D4';
+    var label = OBS_LABELS[obs.type] || 'その他';
+    ctx.fillStyle = '#333';
+    ctx.font = Math.max(14, 20 * state.zoom) + 'px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(icon, 0, -6 * state.zoom);
+    ctx.fillStyle = '#6c3483';
+    ctx.font = 'bold ' + Math.max(9, 11 * state.zoom) + 'px sans-serif';
+    ctx.fillText(label + (o + 1), 0, 10 * state.zoom);
+    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+    // Hover highlight for select tool
+    if (state.tool === 'select' && (o === state.hoveredObsIdx || o === state.movingObsIdx || o === state.rotatingObsIdx)) {
+      ctx.strokeStyle = '#e74c3c'; ctx.lineWidth = 3;
+      ctx.strokeRect(-sw / 2 - 3, -sh / 2 - 3, sw + 6, sh + 6);
+    }
+
+    // Angle indicator when rotating
+    if (state.rotatingObsIdx === o) {
+      ctx.fillStyle = '#2980b9';
+      ctx.font = 'bold ' + Math.max(10, 14 * state.zoom) + 'px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(Math.round(oAngle) + '°', 0, 0);
+      ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+    }
+
+    ctx.restore();
+
+    // Hint text (drawn without rotation)
+    if (state.tool === 'select' && o === state.hoveredObsIdx && state.movingObsIdx < 0 && state.rotatingObsIdx < 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('ドラッグ:移動 / Shift+ドラッグ:回転 / R:90° / Del:削除', sc.x, sc.y + sh / 2 + 16);
+      ctx.textAlign = 'start';
+    }
+  }
+}
+
+function drawGrid() {
+  var gridSizeWorld = 5;
+  var gridSize = gridSizeWorld * SCALE * state.zoom;
+  if (gridSize < 10) return;
+
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 0.5;
+  ctx.font = '9px sans-serif'; ctx.fillStyle = '#aaa';
+
+  var startX = state.panX % gridSize;
+  var startY = state.panY % gridSize;
+
+  for (var x = startX; x < canvas.width; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    ctx.fillText(((x - state.panX) / (SCALE * state.zoom)).toFixed(0) + 'm', x + 2, 12);
+  }
+  for (var y = startY; y < canvas.height; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    ctx.fillText(((y - state.panY) / (SCALE * state.zoom)).toFixed(0) + 'm', 2, y - 2);
+  }
+
+  var subGrid = 1 * SCALE * state.zoom;
+  if (subGrid > 15) {
+    ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 0.3;
+    var sx = state.panX % subGrid; var sy = state.panY % subGrid;
+    for (var x2 = sx; x2 < canvas.width; x2 += subGrid) { ctx.beginPath(); ctx.moveTo(x2, 0); ctx.lineTo(x2, canvas.height); ctx.stroke(); }
+    for (var y2 = sy; y2 < canvas.height; y2 += subGrid) { ctx.beginPath(); ctx.moveTo(0, y2); ctx.lineTo(canvas.width, y2); ctx.stroke(); }
+  }
+}
+
+function drawPolygon(poly, strokeColor, fillColor) {
+  if (poly.points.length < 2) {
+    if (poly.points.length === 1) {
+      var sp = worldToScreen(poly.points[0].x, poly.points[0].y);
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2); ctx.fillStyle = strokeColor; ctx.fill();
+    }
+    return;
+  }
+
+  ctx.beginPath();
+  var fp = worldToScreen(poly.points[0].x, poly.points[0].y);
+  ctx.moveTo(fp.x, fp.y);
+  for (var i = 1; i < poly.points.length; i++) {
+    var sp = worldToScreen(poly.points[i].x, poly.points[i].y);
+    ctx.lineTo(sp.x, sp.y);
+  }
+  if (poly.closed) ctx.closePath();
+  if (poly.closed) { ctx.fillStyle = fillColor; ctx.fill(); }
+  ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke();
+
+  for (var j = 0; j < poly.points.length; j++) {
+    var vp = worldToScreen(poly.points[j].x, poly.points[j].y);
+    ctx.beginPath(); ctx.arc(vp.x, vp.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = strokeColor; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  if (poly.closed && document.getElementById('showDimensions').checked) {
+    for (var k = 0; k < poly.points.length; k++) {
+      var m = (k + 1) % poly.points.length;
+      var p1 = poly.points[k], p2 = poly.points[m];
+      var dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+      var sp1 = worldToScreen(p1.x, p1.y), sp2 = worldToScreen(p2.x, p2.y);
+      var mx = (sp1.x + sp2.x) / 2, my = (sp1.y + sp2.y) / 2;
+      var dx = sp2.x - sp1.x, dy = sp2.y - sp1.y;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      var nx = -dy / len * 14, ny = dx / len * 14;
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(dist.toFixed(1) + 'm', mx + nx, my + ny);
+      ctx.textAlign = 'start';
+    }
+  }
+}
+
+function drawGatePreview(snap) {
+  var gateW = parseFloat(document.getElementById('gateWidth').value);
+  var gateD = parseFloat(document.getElementById('gateDepth').value);
+  var rad = snap.edgeAngle * Math.PI / 180;
+  var cosE = Math.cos(rad), sinE = Math.sin(rad);
+
+  var s = worldToScreen(snap.x, snap.y);
+  // Draw snap point
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, 8, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(39,174,96,0.3)';
+  ctx.fill();
+  ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 2; ctx.stroke();
+
+  // Draw preview exclusion zone
+  var cx = snap.x + snap.normalX * gateD / 2;
+  var cy = snap.y + snap.normalY * gateD / 2;
+  var sc = worldToScreen(cx, cy);
+  var sw = gateW * SCALE * state.zoom;
+  var sh = gateD * SCALE * state.zoom;
+
+  ctx.save();
+  ctx.translate(sc.x, sc.y);
+  ctx.rotate(rad);
+  ctx.fillStyle = 'rgba(39,174,96,0.12)';
+  ctx.strokeStyle = 'rgba(39,174,96,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+  ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Arrow showing entry direction
+  var arrowStart = worldToScreen(snap.x, snap.y);
+  var arrowEnd = worldToScreen(snap.x + snap.normalX * gateD * 0.6, snap.y + snap.normalY * gateD * 0.6);
+  ctx.beginPath();
+  ctx.moveTo(arrowStart.x, arrowStart.y);
+  ctx.lineTo(arrowEnd.x, arrowEnd.y);
+  ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 2.5;
+  ctx.stroke();
+  // Arrowhead
+  var arad = Math.atan2(arrowEnd.y - arrowStart.y, arrowEnd.x - arrowStart.x);
+  ctx.beginPath();
+  ctx.moveTo(arrowEnd.x, arrowEnd.y);
+  ctx.lineTo(arrowEnd.x - 10 * Math.cos(arad - 0.4), arrowEnd.y - 10 * Math.sin(arad - 0.4));
+  ctx.lineTo(arrowEnd.x - 10 * Math.cos(arad + 0.4), arrowEnd.y - 10 * Math.sin(arad + 0.4));
+  ctx.closePath();
+  ctx.fillStyle = '#27ae60'; ctx.fill();
+}
+
+function drawGates() {
+  for (var g = 0; g < state.gates.length; g++) {
+    var gate = state.gates[g];
+    var rad = gate.edgeAngle * Math.PI / 180;
+
+    // Exclusion zone
+    var cx = gate.x + gate.normalX * gate.depth / 2;
+    var cy = gate.y + gate.normalY * gate.depth / 2;
+    var sc = worldToScreen(cx, cy);
+    var sw = gate.width * SCALE * state.zoom;
+    var sh = gate.depth * SCALE * state.zoom;
+
+    ctx.save();
+    ctx.translate(sc.x, sc.y);
+    ctx.rotate(rad);
+
+    // Exclusion zone fill
+    ctx.fillStyle = 'rgba(39,174,96,0.08)';
+    ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+
+    // Hatch pattern for exclusion zone
+    ctx.strokeStyle = 'rgba(39,174,96,0.25)';
+    ctx.lineWidth = 1;
+    var step = 8;
+    ctx.beginPath();
+    for (var h = -sw / 2 - sh; h < sw / 2 + sh; h += step) {
+      ctx.moveTo(h, -sh / 2);
+      ctx.lineTo(h + sh, sh / 2);
+    }
+    ctx.stroke();
+
+    // Border
+    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+    ctx.setLineDash([]);
+
+    ctx.restore();
+
+    // Gate opening marker on edge
+    var gateS = worldToScreen(gate.x, gate.y);
+    var edgeRad = rad;
+    var halfW = gate.width / 2 * SCALE * state.zoom;
+    var x1 = gateS.x - halfW * Math.cos(edgeRad);
+    var y1 = gateS.y - halfW * Math.sin(edgeRad);
+    var x2 = gateS.x + halfW * Math.cos(edgeRad);
+    var y2 = gateS.y + halfW * Math.sin(edgeRad);
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 4; ctx.stroke();
+
+    // Entry arrow
+    var arrowEnd = worldToScreen(gate.x + gate.normalX * gate.depth * 0.4, gate.y + gate.normalY * gate.depth * 0.4);
+    ctx.beginPath();
+    ctx.moveTo(gateS.x, gateS.y); ctx.lineTo(arrowEnd.x, arrowEnd.y);
+    ctx.strokeStyle = '#27ae60'; ctx.lineWidth = 2.5; ctx.stroke();
+    var arad2 = Math.atan2(arrowEnd.y - gateS.y, arrowEnd.x - gateS.x);
+    ctx.beginPath();
+    ctx.moveTo(arrowEnd.x, arrowEnd.y);
+    ctx.lineTo(arrowEnd.x - 10 * Math.cos(arad2 - 0.4), arrowEnd.y - 10 * Math.sin(arad2 - 0.4));
+    ctx.lineTo(arrowEnd.x - 10 * Math.cos(arad2 + 0.4), arrowEnd.y - 10 * Math.sin(arad2 + 0.4));
+    ctx.closePath();
+    ctx.fillStyle = '#27ae60'; ctx.fill();
+
+    // Label
+    ctx.fillStyle = '#2e7d32'; ctx.font = 'bold ' + Math.max(10, 12 * state.zoom) + 'px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    var labelPos = worldToScreen(gate.x + gate.normalX * gate.depth * 0.7, gate.y + gate.normalY * gate.depth * 0.7);
+    ctx.fillText('出入口' + (g + 1), labelPos.x, labelPos.y);
+    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+    // Hover highlight for select tool
+    if (state.tool === 'select' && (g === state.hoveredGateIdx || g === state.movingGateIdx)) {
+      ctx.save();
+      ctx.translate(sc.x, sc.y);
+      ctx.rotate(rad);
+      ctx.strokeStyle = '#e74c3c'; ctx.lineWidth = 3;
+      ctx.strokeRect(-sw / 2 - 3, -sh / 2 - 3, sw + 6, sh + 6);
+      ctx.restore();
+      // Hint text
+      if (g === state.hoveredGateIdx && state.movingGateIdx < 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('ドラッグ:移動 / R:回転 / Delete:削除', sc.x, sc.y + sh / 2 + 16);
+        ctx.textAlign = 'start';
+      }
+    }
+  }
+}
+
+function drawParkingSpaces() {
+  var lineColor = document.getElementById('lineColor').value;
+  var showNums = document.getElementById('showNumbers').checked;
+  var isManualTool = state.tool === 'manual';
+
+  for (var i = 0; i < state.parkingSpaces.length; i++) {
+    var space = state.parkingSpaces[i];
+    var s = worldToScreen(space.x, space.y);
+    var sw = space.w * SCALE * state.zoom;
+    var sh = space.h * SCALE * state.zoom;
+    var rad = space.angle * Math.PI / 180;
+    var isHovered = (isManualTool || state.tool === 'select') && i === state.hoveredSpaceIdx;
+    var isSelected = state.tool === 'select' && state.selectedSpaces.indexOf(i) >= 0;
+
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(rad);
+
+    // Highlight if selected or hovered
+    if (isSelected) {
+      ctx.fillStyle = 'rgba(41,128,185,0.25)';
+      ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+      ctx.strokeStyle = '#2980b9';
+      ctx.lineWidth = Math.max(2.5, 3 * state.zoom);
+      ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+    } else if (isHovered) {
+      ctx.fillStyle = 'rgba(231,76,60,0.25)';
+      ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+      ctx.strokeStyle = '#e74c3c';
+      ctx.lineWidth = Math.max(2.5, 3 * state.zoom);
+      ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+    } else {
+      ctx.fillStyle = 'rgba(80,80,80,0.25)';
+      ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+      // Dark outline behind the line color for contrast
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = Math.max(3, 4 * state.zoom);
+      ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+      // Main line color on top
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = Math.max(1.5, 2 * state.zoom);
+      ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+    }
+
+    if (space.type === 'wheelchair') {
+      ctx.fillStyle = '#2196f3';
+      ctx.font = 'bold ' + Math.max(10, 14 * state.zoom) + 'px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('\u267F', 0, 0);
+    }
+
+    if (showNums && state.zoom > 0.4) {
+      var numColor = isHovered ? '#e74c3c' : lineColor;
+      var numY = space.type === 'wheelchair' ? sh * 0.25 : 0;
+      ctx.font = 'bold ' + Math.max(8, 11 * state.zoom) + 'px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      // Dark shadow behind number for readability
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillText(space.num, 0.8, numY + 0.8);
+      ctx.fillStyle = numColor;
+      ctx.fillText(space.num, 0, numY);
+    }
+
+    // Draw move indicator when being moved
+    if (state.movingSpaceIdx === i) {
+      ctx.fillStyle = 'rgba(230,126,34,0.2)';
+      ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+      ctx.strokeStyle = '#e67e22';
+      ctx.lineWidth = Math.max(2.5, 3 * state.zoom);
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+      ctx.setLineDash([]);
+      // Move icon (crosshair)
+      var iconSize = Math.max(8, 12 * state.zoom);
+      ctx.beginPath();
+      ctx.moveTo(-iconSize, 0); ctx.lineTo(iconSize, 0);
+      ctx.moveTo(0, -iconSize); ctx.lineTo(0, iconSize);
+      ctx.strokeStyle = '#e67e22'; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    // Draw rotation indicator when being rotated
+    if (state.rotatingSpaceIdx === i) {
+      ctx.fillStyle = 'rgba(41,128,185,0.15)';
+      ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+      ctx.strokeStyle = '#2980b9';
+      ctx.lineWidth = Math.max(2.5, 3 * state.zoom);
+      ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
+      // Angle label
+      ctx.fillStyle = '#2980b9';
+      ctx.font = 'bold ' + Math.max(10, 14 * state.zoom) + 'px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(Math.round(space.angle) + '°', 0, 0);
+      ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+    }
+
+    // Draw delete button when hovered (not while rotating)
+    if (isHovered && state.rotatingSpaceIdx < 0) {
+      var btnSize = Math.max(16, 20 * state.zoom);
+      var btnX = sw / 2 - btnSize * 0.3;
+      var btnY = -sh / 2 - btnSize * 0.3;
+      // Circle background
+      ctx.beginPath();
+      ctx.arc(btnX, btnY, btnSize / 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#e74c3c';
+      ctx.fill();
+      // X mark
+      var xr = btnSize * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(btnX - xr, btnY - xr); ctx.lineTo(btnX + xr, btnY + xr);
+      ctx.moveTo(btnX + xr, btnY - xr); ctx.lineTo(btnX - xr, btnY + xr);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // Store delete button screen position for click handling
+  if (isManualTool && state.hoveredSpaceIdx >= 0 && state.hoveredSpaceIdx < state.parkingSpaces.length) {
+    var hsp = state.parkingSpaces[state.hoveredSpaceIdx];
+    var hs = worldToScreen(hsp.x, hsp.y);
+    var hsw = hsp.w * SCALE * state.zoom;
+    var hsh = hsp.h * SCALE * state.zoom;
+    var hrad = hsp.angle * Math.PI / 180;
+    var hcos = Math.cos(hrad), hsin = Math.sin(hrad);
+    var localBtnX = hsw / 2 - Math.max(16, 20 * state.zoom) * 0.3;
+    var localBtnY = -hsh / 2 - Math.max(16, 20 * state.zoom) * 0.3;
+    state._deleteBtnScreen = {
+      x: hs.x + localBtnX * hcos - localBtnY * hsin,
+      y: hs.y + localBtnX * hsin + localBtnY * hcos,
+      r: Math.max(16, 20 * state.zoom) / 2
+    };
+  } else {
+    state._deleteBtnScreen = null;
+  }
+
+  // Draw group indicators (chain icon between grouped spaces)
+  if (state.tool === 'select') {
+    for (var gi2 = 0; gi2 < state.spaceGroups.length; gi2++) {
+      var grp = state.spaceGroups[gi2];
+      if (grp.length < 2) continue;
+      // Draw connecting lines between group members
+      ctx.strokeStyle = 'rgba(41,128,185,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      for (var gm = 0; gm < grp.length - 1; gm++) {
+        var sp_a = state.parkingSpaces[grp[gm]];
+        var sp_b = state.parkingSpaces[grp[gm + 1]];
+        if (!sp_a || !sp_b) continue;
+        var sa = worldToScreen(sp_a.x, sp_a.y);
+        var sb = worldToScreen(sp_b.x, sp_b.y);
+        ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      // Group label
+      var gsp = state.parkingSpaces[grp[0]];
+      if (gsp) {
+        var glabel = worldToScreen(gsp.x, gsp.y);
+        ctx.fillStyle = 'rgba(41,128,185,0.8)';
+        ctx.font = 'bold ' + Math.max(8, 10 * state.zoom) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('\uD83D\uDD17G' + (gi2 + 1), glabel.x, glabel.y - 14 * state.zoom);
+        ctx.textAlign = 'start';
+      }
+    }
+
+    // Selection hint text
+    if (state.selectedSpaces.length > 0 && !state.selectDragging && !state.selectRotating) {
+      var hintC = getSelectionCentroid();
+      var hintS = worldToScreen(hintC.x, hintC.y);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+      var hintMsg = state.selectedSpaces.length + '台選択';
+      hintMsg += ' | R:回転 / Del:削除 / Shift+ドラッグ:回転';
+      // Check if selection is part of a group
+      var inGroup = false;
+      for (var hgi = 0; hgi < state.spaceGroups.length; hgi++) {
+        if (state.spaceGroups[hgi].indexOf(state.selectedSpaces[0]) >= 0) { inGroup = true; break; }
+      }
+      if (inGroup) { hintMsg += ' / Ctrl+Shift+G:グループ解除'; }
+      else if (state.selectedSpaces.length >= 2) { hintMsg += ' / Ctrl+G:グループ化'; }
+      ctx.fillText(hintMsg, hintS.x, hintS.y - 20 * state.zoom);
+      ctx.textAlign = 'start';
+    }
+  }
+}
+
+// ===== Zoom =====
+function zoomIn() { state.zoom = Math.min(10, state.zoom * 1.2); render(); }
+function zoomOut() { state.zoom = Math.max(0.1, state.zoom / 1.2); render(); }
+function zoomFit() {
+  if (state.polygons.length === 0) { state.zoom = 1; state.panX = 50; state.panY = 50; render(); return; }
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (var i = 0; i < state.polygons.length; i++) {
+    for (var j = 0; j < state.polygons[i].points.length; j++) {
+      var p = state.polygons[i].points[j];
+      minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+    }
+  }
+  var w = (maxX - minX) * SCALE;
+  var h = (maxY - minY) * SCALE;
+  var scaleX = (canvas.width - 80) / w;
+  var scaleY = (canvas.height - 80) / h;
+  state.zoom = Math.min(scaleX, scaleY, 5);
+  state.panX = (canvas.width - (maxX + minX) * SCALE * state.zoom) / 2;
+  state.panY = (canvas.height - (maxY + minY) * SCALE * state.zoom) / 2;
+  render();
+}
+
+function clearAll() {
+  // Save snapshot for undo (Ctrl+Z)
+  state.clearSnapshot = {
+    polygons: JSON.parse(JSON.stringify(state.polygons)),
+    currentPoly: state.currentPoly ? JSON.parse(JSON.stringify(state.currentPoly)) : null,
+    parkingSpaces: JSON.parse(JSON.stringify(state.parkingSpaces)),
+    gates: JSON.parse(JSON.stringify(state.gates)),
+    obstacles: JSON.parse(JSON.stringify(state.obstacles)),
+    calibrated: state.calibrated,
+    calibEdge: state.calibEdge ? JSON.parse(JSON.stringify(state.calibEdge)) : null,
+    manualHistory: state.manualHistory.slice(),
+  };
+  state.polygons = []; state.currentPoly = null;
+  state.parkingSpaces = []; state.gates = []; state.obstacles = [];
+  state.calibrated = false; state.calibEdge = null;
+  state.manualHistory = []; state.hoveredSpaceIdx = -1;
+  state.selectedSpaces = []; state.spaceGroups = [];
+  state.deleteUndoStack = [];
+  invalidateAutoPatterns();
+  updateGateList(); updateObsList(); updateManualList(); updateStats(); updateCalibrateStatus(); render();
+}
+
+function restoreFromClearSnapshot() {
+  if (!state.clearSnapshot) return;
+  var snap = state.clearSnapshot;
+  state.polygons = snap.polygons;
+  state.currentPoly = snap.currentPoly;
+  state.parkingSpaces = snap.parkingSpaces;
+  state.gates = snap.gates;
+  state.obstacles = snap.obstacles;
+  state.calibrated = snap.calibrated;
+  state.calibEdge = snap.calibEdge;
+  state.manualHistory = snap.manualHistory;
+  state.clearSnapshot = null;
+  updateGateList(); updateObsList(); updateManualList(); updateStats(); updateCalibrateStatus(); render();
+}
+
+function showHelp() { document.getElementById('helpModal').classList.remove('hidden'); }
+function closeHelp() { document.getElementById('helpModal').classList.add('hidden'); }
+
+// ===== PDF Export =====
+function exportPDF() {
+  if (typeof window.jspdf === 'undefined') { alert('PDFライブラリを読み込み中です。少々お待ちください。'); return; }
+
+  // === Strategy: render everything onto an offscreen canvas (with Japanese text), ===
+  // === then embed the image into the PDF so no font embedding is needed.          ===
+
+  var jsPDF = window.jspdf.jsPDF;
+  var pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
+  var pageW = pdf.internal.pageSize.getWidth();   // mm
+  var pageH = pdf.internal.pageSize.getHeight();
+
+  // --- Compute world bounds ---
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (var i = 0; i < state.polygons.length; i++) {
+    for (var j = 0; j < state.polygons[i].points.length; j++) {
+      var pt = state.polygons[i].points[j];
+      minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y);
+      maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y);
+    }
+  }
+  // Include parking spaces in bounds
+  for (var si2 = 0; si2 < state.parkingSpaces.length; si2++) {
+    var sp2 = state.parkingSpaces[si2];
+    minX = Math.min(minX, sp2.x - sp2.w); minY = Math.min(minY, sp2.y - sp2.h);
+    maxX = Math.max(maxX, sp2.x + sp2.w); maxY = Math.max(maxY, sp2.y + sp2.h);
+  }
+  if (minX === Infinity) { minX = 0; minY = 0; maxX = 50; maxY = 50; }
+  // Add a small margin around the world
+  var pad = 2;
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+
+  var worldW = maxX - minX || 1;
+  var worldH = maxY - minY || 1;
+
+  // --- Stats data (compute once, used in both canvas and PDF) ---
+  var totalArea = 0;
+  for (var ai = 0; ai < state.polygons.length; ai++) { if (state.polygons[ai].closed) totalArea += polygonArea(state.polygons[ai].points); }
+  var spW = parseFloat(document.getElementById('spaceWidth').value);
+  var spD = parseFloat(document.getElementById('spaceDepth').value);
+  var spaceArea = state.parkingSpaces.length * spW * spD;
+  var eff = totalArea > 0 ? (spaceArea / totalArea * 100) : 0;
+
+  // --- Create offscreen canvas ---
+  // Target: entire A3 page as a single image (high DPI for print quality)
+  var DPI = 2;  // 2x resolution
+  var cW = Math.round(pageW * 3.78 * DPI);  // mm -> px at ~96dpi * DPI
+  var cH = Math.round(pageH * 3.78 * DPI);
+  var oc = document.createElement('canvas');
+  oc.width = cW; oc.height = cH;
+  var c = oc.getContext('2d');
+
+  // White background
+  c.fillStyle = '#ffffff';
+  c.fillRect(0, 0, cW, cH);
+
+  // Layout regions (in canvas px)
+  var headerH = Math.round(cH * 0.055);
+  var footerH = Math.round(cH * 0.03);
+  var margin = Math.round(cW * 0.02);
+  var statsPanelW = Math.round(cW * 0.18);
+  var drawX = margin;
+  var drawY = headerH + Math.round(cH * 0.01);
+  var drawW = cW - margin * 2 - statsPanelW - margin;
+  var drawH = cH - drawY - footerH - margin;
+
+  var pScale = Math.min(drawW / worldW, drawH / worldH) * 0.95;
+  var offX = drawX + (drawW - worldW * pScale) / 2;
+  var offY = drawY + (drawH - worldH * pScale) / 2;
+
+  function toC(wx, wy) { return { x: offX + (wx - minX) * pScale, y: offY + (wy - minY) * pScale }; }
+
+  // --- Header ---
+  c.fillStyle = '#1a5276';
+  c.fillRect(0, 0, cW, headerH);
+  c.fillStyle = '#ffffff';
+  c.font = 'bold ' + Math.round(headerH * 0.5) + 'px "Hiragino Sans","Meiryo","sans-serif"';
+  c.textBaseline = 'middle';
+  c.fillText('駐車場区画線 レイアウト図面', margin, headerH / 2);
+  c.font = Math.round(headerH * 0.3) + 'px "Hiragino Sans","Meiryo","sans-serif"';
+  c.textAlign = 'right';
+  c.fillText('ナイヤガラ開発 | ' + new Date().toLocaleDateString('ja-JP'), cW - margin, headerH / 2);
+  c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+
+  // --- Grid ---
+  c.strokeStyle = '#dcdcdc'; c.lineWidth = 0.5;
+  for (var gx = Math.floor(minX / 5) * 5; gx <= maxX + 5; gx += 5) {
+    var gp1 = toC(gx, minY), gp2 = toC(gx, maxY);
+    c.beginPath(); c.moveTo(gp1.x, gp1.y); c.lineTo(gp2.x, gp2.y); c.stroke();
+  }
+  for (var gy = Math.floor(minY / 5) * 5; gy <= maxY + 5; gy += 5) {
+    var gp3 = toC(minX, gy), gp4 = toC(maxX, gy);
+    c.beginPath(); c.moveTo(gp3.x, gp3.y); c.lineTo(gp4.x, gp4.y); c.stroke();
+  }
+
+  // --- Polygons ---
+  for (var pi = 0; pi < state.polygons.length; pi++) {
+    var poly = state.polygons[pi];
+    if (!poly.closed || poly.points.length < 3) continue;
+    // Fill
+    c.beginPath();
+    var fp = toC(poly.points[0].x, poly.points[0].y);
+    c.moveTo(fp.x, fp.y);
+    for (var qi = 1; qi < poly.points.length; qi++) {
+      var qp = toC(poly.points[qi].x, poly.points[qi].y);
+      c.lineTo(qp.x, qp.y);
+    }
+    c.closePath();
+    c.fillStyle = 'rgba(207,216,220,0.5)'; c.fill();
+    c.strokeStyle = '#546e7a'; c.lineWidth = 2; c.stroke();
+
+    // Edge dimensions
+    c.font = Math.round(pScale * 0.8) + 'px "Hiragino Sans","Meiryo","sans-serif"';
+    c.fillStyle = '#505050'; c.textAlign = 'center';
+    for (var di = 0; di < poly.points.length; di++) {
+      var dj = (di + 1) % poly.points.length;
+      var dp1 = poly.points[di], dp2 = poly.points[dj];
+      var dist = Math.sqrt(Math.pow(dp2.x - dp1.x, 2) + Math.pow(dp2.y - dp1.y, 2));
+      var dsp1 = toC(dp1.x, dp1.y), dsp2 = toC(dp2.x, dp2.y);
+      var emx = (dsp1.x + dsp2.x) / 2, emy = (dsp1.y + dsp2.y) / 2;
+      var edx = dsp2.x - dsp1.x, edy = dsp2.y - dsp1.y;
+      var elen = Math.sqrt(edx * edx + edy * edy) || 1;
+      var enx = -edy / elen * pScale * 0.6, eny = edx / elen * pScale * 0.6;
+      c.fillText(dist.toFixed(1) + 'm', emx + enx, emy + eny);
+    }
+    c.textAlign = 'left';
+  }
+
+  // --- Gates ---
+  for (var gi = 0; gi < state.gates.length; gi++) {
+    var gate = state.gates[gi];
+    var gcx = gate.x + gate.normalX * gate.depth / 2;
+    var gcy = gate.y + gate.normalY * gate.depth / 2;
+    var gc2 = toC(gcx, gcy);
+    var gsw = gate.width * pScale, gsh = gate.depth * pScale;
+    var grad = gate.edgeAngle * Math.PI / 180;
+    c.save(); c.translate(gc2.x, gc2.y); c.rotate(grad);
+    c.fillStyle = 'rgba(39,174,96,0.15)';
+    c.fillRect(-gsw / 2, -gsh / 2, gsw, gsh);
+    c.strokeStyle = '#27ae60'; c.lineWidth = 1.5;
+    c.strokeRect(-gsw / 2, -gsh / 2, gsw, gsh);
+    c.fillStyle = '#27ae60';
+    c.font = 'bold ' + Math.round(pScale * 0.6) + 'px "Hiragino Sans","Meiryo","sans-serif"';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('出入口' + (gi + 1), 0, 0);
+    c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    c.restore();
+  }
+
+  // --- Obstacles ---
+  for (var oi = 0; oi < state.obstacles.length; oi++) {
+    var obs = state.obstacles[oi];
+    var obsAngle = obs.angle || 0;
+    var obsCx = (obs.x1 + obs.x2) / 2, obsCy = (obs.y1 + obs.y2) / 2;
+    var obsW2 = Math.abs(obs.x2 - obs.x1), obsH2 = Math.abs(obs.y2 - obs.y1);
+    var occ = toC(obsCx, obsCy);
+    var osw = obsW2 * pScale, osh = obsH2 * pScale;
+    var orad = obsAngle * Math.PI / 180;
+
+    c.save(); c.translate(occ.x, occ.y); c.rotate(orad);
+    // Margin
+    if (obs.margin > 0) {
+      var mw = (obsW2 + obs.margin * 2) * pScale;
+      var mh = (obsH2 + obs.margin * 2) * pScale;
+      c.fillStyle = 'rgba(142,68,173,0.06)';
+      c.strokeStyle = 'rgba(142,68,173,0.3)'; c.lineWidth = 1;
+      c.setLineDash([4, 4]);
+      c.fillRect(-mw / 2, -mh / 2, mw, mh);
+      c.strokeRect(-mw / 2, -mh / 2, mw, mh);
+      c.setLineDash([]);
+    }
+    // Body
+    c.fillStyle = 'rgba(142,68,173,0.2)';
+    c.fillRect(-osw / 2, -osh / 2, osw, osh);
+    // Hatch
+    c.strokeStyle = 'rgba(142,68,173,0.35)'; c.lineWidth = 1;
+    c.beginPath();
+    var step = Math.max(4, pScale * 0.4);
+    for (var oh = -osw / 2 - osh; oh < osw / 2 + osh; oh += step) {
+      c.moveTo(oh, -osh / 2); c.lineTo(oh + osh, osh / 2);
+    }
+    c.save(); c.rect(-osw / 2, -osh / 2, osw, osh); c.clip(); c.stroke(); c.restore();
+    // Border
+    c.strokeStyle = '#8e44ad'; c.lineWidth = 2;
+    c.strokeRect(-osw / 2, -osh / 2, osw, osh);
+    // Label
+    c.fillStyle = '#6c3483';
+    c.font = 'bold ' + Math.round(pScale * 0.5) + 'px "Hiragino Sans","Meiryo","sans-serif"';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText((OBS_LABELS[obs.type] || '') + (oi + 1), 0, 0);
+    c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    c.restore();
+  }
+
+  // --- Parking Spaces ---
+  var lineColor = document.getElementById('lineColor').value || '#FFD700';
+  for (var si = 0; si < state.parkingSpaces.length; si++) {
+    var space = state.parkingSpaces[si];
+    var sc2 = toC(space.x, space.y);
+    var sw = space.w * pScale, sh = space.h * pScale;
+    var srad = space.angle * Math.PI / 180;
+    c.save(); c.translate(sc2.x, sc2.y); c.rotate(srad);
+    // Dark outline for contrast
+    c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 3;
+    c.strokeRect(-sw / 2, -sh / 2, sw, sh);
+    // Main line
+    c.strokeStyle = lineColor; c.lineWidth = 1.5;
+    c.strokeRect(-sw / 2, -sh / 2, sw, sh);
+    // Number with shadow
+    var numFont = Math.max(8, Math.round(pScale * 0.45));
+    c.font = 'bold ' + numFont + 'px "Hiragino Sans","Meiryo","sans-serif"';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = 'rgba(0,0,0,0.5)';
+    c.fillText(String(space.num), 0.5, 0.5);
+    c.fillStyle = lineColor;
+    c.fillText(String(space.num), 0, 0);
+    c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    c.restore();
+  }
+
+  // --- Scale bar ---
+  var scaleM = 10; // 10 meters
+  var scaleLen = scaleM * pScale;
+  var sbx = drawX + 10, sby = drawY + drawH - 10;
+  c.strokeStyle = '#000'; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(sbx, sby); c.lineTo(sbx + scaleLen, sby); c.stroke();
+  c.beginPath(); c.moveTo(sbx, sby - 6); c.lineTo(sbx, sby + 6); c.stroke();
+  c.beginPath(); c.moveTo(sbx + scaleLen, sby - 6); c.lineTo(sbx + scaleLen, sby + 6); c.stroke();
+  c.fillStyle = '#000';
+  c.font = 'bold ' + Math.round(pScale * 0.5) + 'px "Hiragino Sans","Meiryo","sans-serif"';
+  c.textAlign = 'center';
+  c.fillText('10m', sbx + scaleLen / 2, sby - 10);
+  c.textAlign = 'left';
+
+  // --- Stats panel ---
+  var stX = cW - statsPanelW - margin / 2;
+  var stY = drawY;
+  var stW = statsPanelW;
+  var stH = drawH;
+  // Background
+  c.fillStyle = '#f8f9fb'; c.strokeStyle = '#ccc'; c.lineWidth = 1;
+  c.fillRect(stX, stY, stW, stH);
+  c.strokeRect(stX, stY, stW, stH);
+  // Title
+  var stFontL = Math.round(stW * 0.08);
+  var stFontS = Math.round(stW * 0.06);
+  var stFontV = Math.round(stW * 0.07);
+  c.fillStyle = '#1a5276';
+  c.font = 'bold ' + stFontL + 'px "Hiragino Sans","Meiryo","sans-serif"';
+  c.fillText('シミュレーション結果', stX + stW * 0.06, stY + stFontL * 1.8);
+  c.strokeStyle = '#1a5276'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(stX + stW * 0.06, stY + stFontL * 2.2); c.lineTo(stX + stW * 0.94, stY + stFontL * 2.2); c.stroke();
+
+  // Use countByType for accurate mixed-vehicle stats
+  var pdfInfo = countByType();
+  spaceArea = pdfInfo.spaceArea;
+  eff = totalArea > 0 ? (spaceArea / totalArea * 100) : 0;
+
+  var statsRows = [
+    ['駐車台数（合計）', state.parkingSpaces.length + ' 台'],
+    ['敷地面積', totalArea.toFixed(0) + ' m\u00B2'],
+    ['駐車面積', spaceArea.toFixed(0) + ' m\u00B2'],
+    ['面積効率', eff.toFixed(0) + '%'],
+    ['通路幅', document.getElementById('aisleWidth').value + 'm'],
+    ['出入口数', state.gates.length + ' 箇所'],
+    ['障害物数', state.obstacles.length + ' 箇所'],
+  ];
+  var rowY = stY + stFontL * 3.2;
+  var rowH = stFontV * 2.2;
+  for (var ri = 0; ri < statsRows.length; ri++) {
+    c.fillStyle = '#888';
+    c.font = stFontS + 'px "Hiragino Sans","Meiryo","sans-serif"';
+    c.fillText(statsRows[ri][0], stX + stW * 0.06, rowY);
+    c.fillStyle = '#1a5276';
+    c.font = 'bold ' + stFontV + 'px "Hiragino Sans","Meiryo","sans-serif"';
+    c.textAlign = 'right';
+    c.fillText(statsRows[ri][1], stX + stW * 0.94, rowY);
+    c.textAlign = 'left';
+    rowY += rowH;
+  }
+
+  // Vehicle type breakdown
+  var typeCounts = pdfInfo.counts;
+  var typeKeys = Object.keys(typeCounts);
+  if (typeKeys.length > 0) {
+    rowY += rowH * 0.3;
+    c.fillStyle = '#1a5276';
+    c.font = 'bold ' + stFontS + 'px "Hiragino Sans","Meiryo","sans-serif"';
+    c.fillText('車種別��訳', stX + stW * 0.06, rowY);
+    rowY += rowH * 0.8;
+    for (var tk = 0; tk < typeKeys.length; tk++) {
+      var tKey = typeKeys[tk];
+      var tSz = VEHICLE_SIZES[tKey];
+      var tLabel = tSz ? tSz.label + ' (' + tSz.w + 'x' + tSz.d + ')' : tKey;
+      c.fillStyle = '#888';
+      c.font = stFontS + 'px "Hiragino Sans","Meiryo","sans-serif"';
+      c.fillText(tLabel, stX + stW * 0.06, rowY);
+      c.fillStyle = '#1a5276';
+      c.font = 'bold ' + stFontV + 'px "Hiragino Sans","Meiryo","sans-serif"';
+      c.textAlign = 'right';
+      c.fillText(typeCounts[tKey] + ' 台', stX + stW * 0.94, rowY);
+      c.textAlign = 'left';
+      rowY += rowH;
+    }
+  }
+
+  // --- Footer ---
+  var ftY = cH - footerH;
+  c.fillStyle = '#f0f0f0';
+  c.fillRect(0, ftY, cW, footerH);
+  c.fillStyle = '#999';
+  c.font = Math.round(footerH * 0.45) + 'px "Hiragino Sans","Meiryo","sans-serif"';
+  c.fillText('本図面はシミュレーション結果であり、実際の施工には現地調査が必要です。', margin, ftY + footerH * 0.65);
+  c.textAlign = 'right';
+  c.fillText('ナイヤガラ開発営業支援システム：駐車場区画線シミュレーター ver1.0', cW - margin, ftY + footerH * 0.65);
+  c.textAlign = 'left';
+
+  // --- Embed into PDF ---
+  var imgData = oc.toDataURL('image/png');
+  pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
+  pdf.save('駐車場レイアウト_ナイヤガラ開発.pdf');
+}
+
+// ===== Page Unload Protection =====
+window.addEventListener('beforeunload', function(e) {
+  // Warn if there's any data to lose
+  if (state.polygons.length > 0 || state.parkingSpaces.length > 0 || state.gates.length > 0) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+// Initialize
+render();
+</script>
+</body>
+</html>
